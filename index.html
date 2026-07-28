@@ -1566,7 +1566,7 @@
                     <div style="font-size: 18px; cursor: pointer; display: none;">≡</div>
                     <div class="search-box">
                         <span>🔍</span>
-                        <input type="text" placeholder="Search anything...">
+                        <input id="globalSearch" type="text" placeholder="Search anything..." oninput="performGlobalSearch()">
                     </div>
                 </div>
                 <div class="topbar-right">
@@ -2149,6 +2149,41 @@
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
         
         let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [];
+        
+        // Dropdown collections from sheets
+        let categories = [], subcategories = [], suppliers = [], locations = [], purchaseUnits = [], packUnits = [];
+        
+        function extractDropdownOptions() {
+            // Extract unique values from inventory for dropdowns
+            if (inventory && inventory.length > 0) {
+                categories = [...new Set(inventory.map(i => i.category).filter(Boolean))];
+                subcategories = [...new Set(inventory.map(i => i.subcategory).filter(Boolean))];
+                suppliers = [...new Set(inventory.map(i => i.supplier).filter(Boolean))];
+                locations = [...new Set(inventory.map(i => i.location).filter(Boolean))];
+                purchaseUnits = [...new Set(inventory.map(i => i.purchaseUnit).filter(Boolean))];
+                packUnits = [...new Set(inventory.map(i => i.packUnit).filter(Boolean))];
+            }
+        }
+        
+        // Global search across all data
+        function performGlobalSearch() {
+            const query = document.getElementById('globalSearch')?.value.toLowerCase() || '';
+            if (!query) return;
+            
+            const results = {
+                inventory: inventory.filter(i => i.name?.toLowerCase().includes(query) || i.category?.toLowerCase().includes(query) || i.supplier?.toLowerCase().includes(query)),
+                deliveries: deliveries.filter(d => d.item?.toLowerCase().includes(query) || d.supplier?.toLowerCase().includes(query)),
+                expiry: expiryDates.filter(e => (e.item || e['Item'])?.toLowerCase().includes(query) || (e.location || e['Location'])?.toLowerCase().includes(query)),
+                movements: movements.filter(m => m.Item?.toLowerCase().includes(query) || m['From Location']?.toLowerCase().includes(query)),
+                waste: waste.filter(w => w.Item?.toLowerCase().includes(query) || w.Reason?.toLowerCase().includes(query))
+            };
+            
+            // Show results in a modal or update relevant table
+            if (results.inventory.length > 0) {
+                showPage('stock');
+                // Highlight results
+            }
+        }
         
         // ============= AUTHENTICATION FUNCTIONS =============
         
@@ -2833,6 +2868,11 @@
             loadTheme();
             loadProfileData();
             setInterval(loadAllData, 30000);
+            // Refresh expiry countdown every minute for real-time updates
+            setInterval(() => {
+                if (currentPage === 'expiry') renderExpiryTable();
+                updateExpiryMetrics();
+            }, 60000);
         }
         
         // Sync changes back to Google Sheets via Apps Script
@@ -2872,6 +2912,18 @@
             loadActivities();
             updateDashboard();
             loadProfileImage();
+            extractDropdownOptions();
+        }
+        
+        // Extract dropdown options from sheets for use in modals
+        function extractDropdownOptions() {
+            if (inventory && inventory.length > 0) {
+                categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
+                subcategories = [...new Set(inventory.map(i => i.subcategory || '').filter(Boolean))].sort();
+                suppliers = [...new Set(inventory.map(i => i.supplier || '').filter(Boolean))].sort();
+                locations = [...new Set(inventory.map(i => i.location || '').filter(Boolean))].sort();\n                purchaseUnits = [...new Set(inventory.map(i => i.purchaseUnit || '').filter(Boolean))].sort();
+                packUnits = [...new Set(inventory.map(i => i.packUnit || '').filter(Boolean))].sort();
+            }
         }
         
         // Helper function to send data to Apps Script
@@ -3469,19 +3521,43 @@
             if (tbody) tbody.innerHTML = html;
         }
         
+        function calculateDaysUntilExpiry(expiryDate) {
+            if (!expiryDate) return 0;
+            const expDate = new Date(expiryDate);
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const diffTime = expDate - today;
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays >= 0 ? diffDays : -Math.abs(diffDays);
+        }
+        
+        function getExpiryStatus(daysUntilExpiry) {
+            if (daysUntilExpiry < 0) return 'Expired';
+            if (daysUntilExpiry === 0) return 'Today';
+            if (daysUntilExpiry <= 7) return 'Critical';
+            if (daysUntilExpiry <= 30) return 'Warning';
+            return 'Good';
+        }
+        
         function renderExpiryTable() {
             const filtered = expiryDates || [];
-            const html = filtered.length > 0 ? filtered.map((e, idx) => `
+            const html = filtered.length > 0 ? filtered.map((e, idx) => {
+                const expiryDate = e.expiryDate || e['Expiry Date'] || '';
+                const daysUntil = calculateDaysUntilExpiry(expiryDate);
+                const status = getExpiryStatus(daysUntil);
+                const statusColor = status === 'Expired' ? '#ff4444' : status === 'Critical' ? '#ff8800' : status === 'Today' ? '#ff6600' : status === 'Warning' ? '#ffbb00' : '#44bb44';
+                
+                return `
                 <tr>
                     <td>${e.item || e['Item'] || '—'}</td>
                     <td>${e.location || e['Location'] || '—'}</td>
                     <td>${e.quantity || e['Quantity'] || '—'}</td>
                     <td>${e.purchaseUnit || e['Purchase Unit'] || '—'}</td>
-                    <td>${e.expiryDate || e['Expiry Date'] || '—'}</td>
-                    <td>${e.daysUntilExpiry || e['Days until Expiry'] || '—'}</td>
-                    <td><span style="background:${(e.status || e['Status']) === 'Expired' ? '#ff4444' : (e.status || e['Status']) === 'Critical' ? '#ff8800' : (e.status || e['Status']) === 'Warning' ? '#ffbb00' : '#44bb44'};color:white;padding:4px 8px;border-radius:3px;font-size:12px;font-weight:600;">${e.status || e['Status'] || 'Good'}</span></td>
+                    <td>${expiryDate || '—'}</td>
+                    <td><strong>${daysUntil >= 0 ? daysUntil + ' days' : 'EXPIRED'}</strong></td>
+                    <td><span style="background:${statusColor};color:white;padding:4px 8px;border-radius:3px;font-size:12px;font-weight:600;">${status}</span></td>
                 </tr>
-            `).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates found</td></tr>';
+            `}).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates found</td></tr>';
             
             const tbody = document.getElementById('expiryRows');
             if (tbody) tbody.innerHTML = html;
