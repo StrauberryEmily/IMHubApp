@@ -2520,12 +2520,14 @@
                 const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
                 const userData = allUsers[email] || {};
                 const userRole = data.role || userData.role || 'Staff';
+                const isPrimaryAdmin = data.isPrimaryAdmin || 0;
                 
                 // Login successful - store in localStorage
                 localStorage.setItem('currentUser', data.email);
                 localStorage.setItem('currentUserName', userData.name || 'User');
                 localStorage.setItem('currentUserJobTitle', userData.location || 'Staff');
                 localStorage.setItem('userRole', userRole);
+                localStorage.setItem('isPrimaryAdmin', isPrimaryAdmin);
                 localStorage.setItem('recoveryCode', data.recoveryCode);
                 
                 checkAuth();
@@ -2844,32 +2846,43 @@
         function loadTeamMembers() {
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
             const list = document.getElementById('teamMembersList');
+            const currentUserEmail = localStorage.getItem('currentUser');
             
             if (Object.keys(allUsers).length === 0) {
                 list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">No team members yet</div>';
                 return;
             }
             
-            list.innerHTML = Object.entries(allUsers).map(([email, user]) => `
-                <div style="background:var(--bg);padding:12px;border-radius:6px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+            list.innerHTML = Object.entries(allUsers).map(([email, user]) => {
+                const isPrimaryAdmin = email === 'emilyjreed01@gmail.com';
+                const isCurrentUser = email === currentUserEmail;
+                return `
+                <div style="background:var(--bg);padding:12px;border-radius:6px;border:${isPrimaryAdmin ? '2px solid #ff9800' : '1px solid var(--border)'};display:flex;justify-content:space-between;align-items:center;">
                     <div>
-                        <strong>${user.name}</strong>
+                        <strong>${user.name}${isPrimaryAdmin ? ' 🔐 PRIMARY ADMIN' : ''}</strong>
                         <div style="font-size:12px;color:var(--muted);">${email}</div>
                         <div style="font-size:12px;margin-top:4px;">
-                            <span style="background:#e3f2fd;padding:2px 6px;border-radius:3px;margin-right:6px;">${user.roles?.join(', ') || user.role}</span>
+                            <span style="background:${isPrimaryAdmin ? '#fff3cd' : '#e3f2fd'};padding:2px 6px;border-radius:3px;margin-right:6px;${isPrimaryAdmin ? 'font-weight:700;color:#ff9800;' : ''}">${isPrimaryAdmin ? '🔒 PRIMARY' : (user.roles?.join(', ') || user.role)}</span>
                             <span style="background:#f3e5f5;padding:2px 6px;border-radius:3px;">${user.location || 'All Locations'}</span>
                         </div>
+                        ${isPrimaryAdmin ? '<div style="font-size:11px;color:#ff9800;margin-top:4px;font-style:italic;">Protected - Cannot be modified</div>' : ''}
                     </div>
                     <div style="display:flex;gap:8px;">
-                        <button onclick="editTeamMember('${email}')" style="padding:6px 12px;background:#4488ff;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Edit</button>
-                        <button onclick="deleteTeamMember('${email}')" style="padding:6px 12px;background:#ff4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Delete</button>
+                        <button onclick="editTeamMember('${email}')" style="padding:6px 12px;background:${isPrimaryAdmin ? '#ccc' : '#4488ff'};color:${isPrimaryAdmin ? '#666' : 'white'};border:none;border-radius:4px;cursor:${isPrimaryAdmin ? 'not-allowed' : 'pointer'};font-size:12px;" ${isPrimaryAdmin ? 'disabled' : ''}>Edit</button>
+                        <button onclick="deleteTeamMember('${email}')" style="padding:6px 12px;background:${isPrimaryAdmin ? '#ccc' : '#ff4444'};color:${isPrimaryAdmin ? '#666' : 'white'};border:none;border-radius:4px;cursor:${isPrimaryAdmin ? 'not-allowed' : 'pointer'};font-size:12px;" ${isPrimaryAdmin ? 'disabled' : ''}>Delete</button>
                     </div>
                 </div>
-            `).join('');
+            `}).join('');
         }
         
         function editTeamMember(email) {
             if (!checkAdminAccess('Editing team members')) return;
+            
+            // Prevent editing primary admin
+            if (email === 'emilyjreed01@gmail.com') {
+                alert('🔐 Cannot modify Primary Admin account.\n\nThis account is permanently protected.');
+                return;
+            }
             
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
             const user = allUsers[email];
@@ -2890,6 +2903,12 @@
         
         function deleteTeamMember(email) {
             if (!checkAdminAccess('Deleting team members')) return;
+            
+            // Prevent deleting primary admin
+            if (email === 'emilyjreed01@gmail.com') {
+                alert('🔐 Cannot delete Primary Admin account.\n\nThis account is permanently protected.');
+                return;
+            }
             
             if (confirm(`Delete ${email} from team?`)) {
                 const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
