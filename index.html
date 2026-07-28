@@ -1516,11 +1516,16 @@
                                 <button class="nested-item" onclick="showOrderingTab('add')" style="padding:8px 20px;font-size:13px;">➕ Add New Order</button>
                                 <button class="nested-item" onclick="showOrderingTab('request')" style="padding:8px 20px;font-size:13px;">📤 Order Request</button>
                                 <div style="border-top:1px solid rgba(255,77,148,0.2);margin:4px 0;padding-top:4px;">
-                                    <button class="nested-item" onclick="showOrderingTab('cocacola')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🥤 Order CocaCola</button>
+                                    <button class="nested-item" onclick="showOrderingTab('coca-cola')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🥤 Order Coca Cola</button>
+                                    <button class="nested-item" onclick="showOrderingTab('schweppes')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🥤 Order Schweppes</button>
+                                    <button class="nested-item" onclick="showOrderingTab('lion')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🦁 Order Lion</button>
+                                    <button class="nested-item" onclick="showOrderingTab('bunkers')" style="padding:8px 20px;font-size:12px;color:var(--muted);">⚙️ Order Bunkers</button>
+                                    <button class="nested-item" onclick="showOrderingTab('vittoria-coffee')" style="padding:8px 20px;font-size:12px;color:var(--muted);">☕ Order Vittoria Coffee</button>
+                                    <button class="nested-item" onclick="showOrderingTab('dilmah-tea')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🍵 Order Dilmah Tea</button>
                                     <button class="nested-item" onclick="showOrderingTab('bidfood')" style="padding:8px 20px;font-size:12px;color:var(--muted);">📦 Order BidFood</button>
-                                    <button class="nested-item" onclick="showOrderingTab('wine')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🍷 Order Wine</button>
-                                    <button class="nested-item" onclick="showOrderingTab('beer')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🍺 Order Beer</button>
-                                    <button class="nested-item" onclick="showOrderingTab('slices')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🍕 Order Slices</button>
+                                    <button class="nested-item" onclick="showOrderingTab('santos')" style="padding:8px 20px;font-size:12px;color:var(--muted);">☕ Order Santos</button>
+                                    <button class="nested-item" onclick="showOrderingTab('springhill-farm')" style="padding:8px 20px;font-size:12px;color:var(--muted);">🌾 Order SpringHill Farm</button>
+                                    <button class="nested-item" onclick="showOrderingTab('qantas-items')" style="padding:8px 20px;font-size:12px;color:var(--muted);">✈️ Order Qantas Items</button>
                                 </div>
                             </div>
                         </div>
@@ -1846,6 +1851,10 @@
                     <div class="top">
                         <h1>Ordering System</h1>
                         <div class="sub">Manage orders and order requests - Linked to Delivers sheet</div>
+                    </div>
+                    <div id="supplierComingSoonBanner" style="display:none;background:#fff3cd;border:1px solid #ffc107;border-radius:8px;padding:16px;margin-bottom:16px;text-align:center;">
+                        <div style="font-size:14px;color:#856404;font-weight:600;">🔔 Coming Soon</div>
+                        <div style="font-size:13px;color:#856404;margin-top:4px;">Order information for <span id="supplierComingSoonName" style="font-weight:600;"></span> will be available shortly.</div>
                     </div>
                     <div class="toolbar">
                         <select id="orderingSupplierDropdown" style="padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;cursor:pointer;" onchange="handleOrderingDropdown()">
@@ -4471,16 +4480,58 @@
         function showOrderingTab(type) {
             showPage('ordering');
             setNavActive(null);
-            localStorage.setItem('orderingTabType', type);
-            // You can expand on this to show different content based on the type
-            console.log('Showing ordering tab:', type);
+            
+            // Supplier name mappings
+            const supplierNames = {
+                'coca-cola': 'Coca Cola',
+                'schweppes': 'Schweppes',
+                'lion': 'Lion',
+                'bunkers': 'Bunkers',
+                'vittoria-coffee': 'Vittoria Coffee',
+                'dilmah-tea': 'Dilmah Tea',
+                'bidfood': 'BidFood',
+                'santos': 'Santos',
+                'springhill-farm': 'SpringHill Farm',
+                'qantas-items': 'Qantas Items'
+            };
+            
+            const banner = document.getElementById('supplierComingSoonBanner');
+            const bannerName = document.getElementById('supplierComingSoonName');
+            
+            if (supplierNames[type]) {
+                // Show coming soon banner for specific supplier
+                bannerName.textContent = supplierNames[type];
+                banner.style.display = 'block';
+                localStorage.setItem('selectedSupplier', type);
+            } else {
+                // Hide banner for regular ordering functions
+                banner.style.display = 'none';
+                localStorage.removeItem('selectedSupplier');
+            }
         }
         
         function handleOrderingDropdown() {
             const dropdown = document.getElementById('orderingSupplierDropdown');
             const selectedValue = dropdown.value;
-            if (selectedValue) {
-                alert('🔔 Coming Soon! Order functionality for this supplier will be available shortly.');
+            
+            const supplierNames = {
+                'coca-cola': 'Coca Cola',
+                'schweppes': 'Schweppes',
+                'lion': 'Lion',
+                'bunkers': 'Bunkers',
+                'vittoria': 'Vittoria Coffee',
+                'dilmah': 'Dilmah Tea',
+                'bidfood': 'BidFood',
+                'santos': 'Santos',
+                'springhill': 'SpringHill Farm',
+                'qantas': 'Qantas Items'
+            };
+            
+            if (selectedValue && supplierNames[selectedValue]) {
+                const banner = document.getElementById('supplierComingSoonBanner');
+                const bannerName = document.getElementById('supplierComingSoonName');
+                bannerName.textContent = supplierNames[selectedValue];
+                banner.style.display = 'block';
                 dropdown.value = ''; // Reset dropdown
             }
         }
