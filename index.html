@@ -3243,11 +3243,14 @@
             document.getElementById('jobTitleInput').value = userJobTitle;
             document.getElementById('emailInput').value = userEmail;
             
-            // Load user role and recovery code
+            // Load user role and recovery code (check localStorage first for role from server)
+            const storedRole = localStorage.getItem('userRole');
             const users = JSON.parse(localStorage.getItem('imhUsers') || '{}');
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
             const user = users[userEmail] || allUsers[userEmail];
-            currentUserRole = user?.role || 'Staff';
+            
+            // Priority: 1) stored role from login response, 2) user object role, 3) default Staff
+            currentUserRole = storedRole || user?.role || 'Staff';
             localStorage.setItem('userRole', currentUserRole);
             if (user) {
                 document.getElementById('recoveryCodeDisplay').textContent = user.recoveryCode;
