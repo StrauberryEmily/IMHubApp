@@ -2780,10 +2780,34 @@
             document.getElementById('rolesText').textContent = userRoles.join(', ');
         }
         
+        // Sync admin role to backend database
+        function syncAdminToBackend(email, isAdmin) {
+            fetch('/api/setup-admin', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    email: email.toLowerCase().trim(), 
+                    setupKey: 'ADMIN_SETUP_2024' 
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('✅ Admin synced to backend:', email);
+                } else if (data.error === 'User not found') {
+                    // User exists but hasn't registered yet - will become admin when they do
+                    console.log('📧 User will be admin when they register with:', email);
+                } else {
+                    console.error('❌ Sync failed:', data.error);
+                }
+            })
+            .catch(err => console.error('Sync error:', err));
+        }
+        
         function addTeamMember() {
             if (!checkAdminAccess('Adding team members')) return;
             
-            const email = document.getElementById('newMemberEmail').value;
+            const email = document.getElementById('newMemberEmail').value.toLowerCase().trim();
             const name = document.getElementById('newMemberName').value;
             const role = document.getElementById('newMemberRole').value;
             const location = document.getElementById('newMemberLocation').value;
@@ -2803,12 +2827,17 @@
             };
             localStorage.setItem('allUsers', JSON.stringify(allUsers));
             
+            // If Admin role, sync to backend
+            if (role === 'Admin') {
+                syncAdminToBackend(email, true);
+            }
+            
             // Clear inputs
             document.getElementById('newMemberEmail').value = '';
             document.getElementById('newMemberName').value = '';
             document.getElementById('newMemberRole').value = '';
             
-            alert('✅ Team member added!');
+            alert('✅ Team member added!' + (role === 'Admin' ? '\n👤 ' + email + ' now has Admin access' : ''));
             loadTeamMembers();
         }
         
@@ -2849,6 +2878,12 @@
                 user.roles = [newRole];
                 user.role = newRole;
                 localStorage.setItem('allUsers', JSON.stringify(allUsers));
+                
+                // If changed to Admin, sync to backend
+                if (newRole === 'Admin') {
+                    syncAdminToBackend(email, true);
+                }
+                
                 loadTeamMembers();
             }
         }
