@@ -1805,16 +1805,19 @@
                             <thead>
                                 <tr>
                                     <th>Item</th>
+                                    <th>Category</th>
+                                    <th>Subcategory</th>
                                     <th>Location</th>
                                     <th>Quantity</th>
                                     <th>Purchase Unit</th>
                                     <th>Expiry Date</th>
                                     <th>Days until Expiry</th>
                                     <th>Status</th>
+                                    <th>Edit</th>
                                 </tr>
                             </thead>
                             <tbody id="expiryRows">
-                                <tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates yet - Click "Add Expiry" to create one</td></tr>
+                                <tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates yet - Click "Add Expiry" to create one</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2133,7 +2136,119 @@
                 </div>
             </section>
             
-            <section id="settings" class="page"><div class="page-content"><div class="top"><h1>Settings</h1></div><div class="empty">Coming soon</div></div></section>
+            <section id="settings" class="page"><div class="page-content"><div class="top"><h1>⚙️ Settings</h1></div>
+            <div style="display:grid;grid-template-columns:200px 1fr;gap:20px;min-height:600px;">
+                <!-- Settings Menu -->
+                <div style="background:var(--surface);border-radius:8px;padding:16px;height:fit-content;">
+                    <button onclick="showSettingsSection('profile')" class="settings-btn" data-section="profile" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">👤 Profile</button>
+                    <button onclick="showSettingsSection('location')" class="settings-btn" data-section="location" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">📍 Location</button>
+                    <button onclick="showSettingsSection('team')" class="settings-btn" data-section="team" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">👥 Team</button>
+                    <button onclick="showSettingsSection('security')" class="settings-btn" data-section="security" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">🔐 Security</button>
+                </div>
+                
+                <!-- Settings Content -->
+                <div style="background:var(--surface);border-radius:8px;padding:20px;">
+                    <!-- Profile Section -->
+                    <div id="profile-section" class="settings-section">
+                        <h2>👤 Profile Settings</h2>
+                        <div style="display:grid;gap:16px;margin-top:16px;">
+                            <div>
+                                <label style="display:block;font-size:14px;font-weight:600;margin-bottom:6px;color:var(--muted);">Full Name</label>
+                                <input type="text" id="settingName" placeholder="Your name" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:14px;font-weight:600;margin-bottom:6px;color:var(--muted);">Job Title</label>
+                                <input type="text" id="settingJobTitle" placeholder="e.g., Manager, Staff" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                            </div>
+                            <div>
+                                <label style="display:block;font-size:14px;font-weight:600;margin-bottom:6px;color:var(--muted);">Theme</label>
+                                <select id="themeSelect" onchange="applyTheme(this.value)" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                                    <option value="default">Default (Light)</option>
+                                    <option value="dark">Dark</option>
+                                    <option value="pink">Pink</option>
+                                    <option value="blue">Blue</option>
+                                    <option value="green">Green</option>
+                                    <option value="purple">Purple</option>
+                                    <option value="orange">Orange</option>
+                                </select>
+                            </div>
+                            <button onclick="saveProfileSettings()" style="padding:12px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;margin-top:10px;">💾 Save Profile</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Location Section -->
+                    <div id="location-section" class="settings-section" style="display:none;">
+                        <h2>📍 My Location</h2>
+                        <p style="color:var(--muted);margin-top:8px;">Select which location's inventory you want to manage:</p>
+                        <div style="display:grid;gap:12px;margin-top:16px;">
+                            <select id="userLocationSelect" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;">
+                                <option value="All Locations">🌐 All Locations</option>
+                            </select>
+                            <div id="userRolesDisplay" style="background:var(--bg);padding:12px;border-radius:6px;border:1px dashed var(--border);color:var(--muted);font-size:14px;">
+                                Your roles: <span id="rolesText">Loading...</span>
+                            </div>
+                            <button onclick="saveLocationPreference()" style="padding:12px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">💾 Save Location Preference</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Team Section (Admin Only) -->
+                    <div id="team-section" class="settings-section" style="display:none;">
+                        <h2>👥 Team Management</h2>
+                        <p style="color:var(--muted);margin-top:8px;">Manage team members, assign roles and locations (Admin only)</p>
+                        
+                        <div style="margin-top:20px;margin-bottom:20px;">
+                            <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">Add Team Member</h3>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                                <input type="email" id="newMemberEmail" placeholder="Email address" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                                <input type="text" id="newMemberName" placeholder="Full name" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                            </div>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+                                <select id="newMemberRole" style="padding:10px;border:1px solid var(--border);border-radius:6px;">
+                                    <option value="">Select Role</option>
+                                    <option value="Admin">Admin (Full Access)</option>
+                                    <option value="Manager">Manager (Manage + Report)</option>
+                                    <option value="Staff">Staff (View + Add Data)</option>
+                                    <option value="Viewer">Viewer (Read Only)</option>
+                                </select>
+                                <select id="newMemberLocation" style="padding:10px;border:1px solid var(--border);border-radius:6px;">
+                                    <option value="All Locations">🌐 All Locations</option>
+                                </select>
+                            </div>
+                            <button onclick="addTeamMember()" style="width:100%;padding:10px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">➕ Add Member</button>
+                        </div>
+                        
+                        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">
+                            <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">Team Members</h3>
+                            <div id="teamMembersList" style="display:grid;gap:10px;">
+                                <div style="text-align:center;color:var(--muted);padding:20px;">Loading team members...</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Security Section -->
+                    <div id="security-section" class="settings-section" style="display:none;">
+                        <h2>🔐 Security</h2>
+                        <div style="display:grid;gap:16px;margin-top:16px;">
+                            <div style="background:#fff3cd;padding:12px;border-radius:6px;border-left:4px solid #ff8800;">
+                                <strong>Recovery Code:</strong> <span id="recoveryCodeDisplay">••••••</span>
+                                <button onclick="showRecoveryCode()" style="margin-left:10px;padding:6px 12px;background:white;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:12px;">Show</button>
+                            </div>
+                            <div>
+                                <h3 style="font-size:14px;font-weight:600;margin-bottom:8px;">Change Password</h3>
+                                <div style="display:grid;gap:10px;">
+                                    <input type="password" id="currentPassword" placeholder="Current password" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                                    <input type="password" id="newPassword" placeholder="New password" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                                    <input type="password" id="confirmPassword" placeholder="Confirm password" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                                    <button onclick="changePasswordInSettings()" style="padding:10px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🔄 Update Password</button>
+                                </div>
+                            </div>
+                            <div style="border-top:1px solid var(--border);padding-top:16px;">
+                                <button onclick="handleLogout()" style="width:100%;padding:12px;background:#ff4444;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">🚪 Logout</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div></div></section>
             <section id="help" class="page"><div class="page-content"><div class="top"><h1>Help</h1></div><div class="empty">Coming soon</div></div></section>
         </main>
     </div>
@@ -2148,10 +2263,11 @@
         const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=322069325`;
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
         
-        let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [];
+        let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [], currentPage = 'dashboard';
         
         // Dropdown collections from sheets
         let categories = [], subcategories = [], suppliers = [], locations = [], purchaseUnits = [], packUnits = [];
+        let currentUserLocation = 'All Locations', userRoles = {}; // {location: ['role1', 'role2']}
         
         function extractDropdownOptions() {
             // Extract unique values from inventory for dropdowns
@@ -2482,10 +2598,161 @@
             localStorage.removeItem('currentUserRole');
             localStorage.removeItem('currentUserName');
             localStorage.removeItem('currentUserJobTitle');
+            localStorage.removeItem('currentUserLocation');
             checkAuth();
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';
         }
+        
+        // Settings Management
+        function showSettingsSection(section) {
+            document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
+            document.getElementById(section + '-section').style.display = 'block';
+            document.querySelectorAll('.settings-btn').forEach(b => b.style.background = 'white');
+            event.target.style.background = 'var(--pink)';
+            event.target.style.color = 'white';
+        }
+        
+        function saveProfileSettings() {
+            const name = document.getElementById('settingName').value || localStorage.getItem('currentUserName');
+            const title = document.getElementById('settingJobTitle').value || localStorage.getItem('currentUserJobTitle');
+            localStorage.setItem('currentUserName', name);
+            localStorage.setItem('currentUserJobTitle', title);
+            alert('✅ Profile updated!');
+        }
+        
+        function saveLocationPreference() {
+            const location = document.getElementById('userLocationSelect').value;
+            localStorage.setItem('currentUserLocation', location);
+            currentUserLocation = location;
+            alert('✅ Location preference saved!');
+            renderTable(); // Refresh view
+        }
+        
+        function populateLocationSelects() {
+            const locs = ['🌐 All Locations', ...(locations || [])];
+            const select = document.getElementById('userLocationSelect');
+            const newMemberLoc = document.getElementById('newMemberLocation');
+            if (select) {
+                select.innerHTML = locs.map(l => `<option value="${l}">${l}</option>`).join('');
+                select.value = localStorage.getItem('currentUserLocation') || 'All Locations';
+            }
+            if (newMemberLoc) {
+                newMemberLoc.innerHTML = locs.map(l => `<option value="${l}">${l}</option>`).join('');
+            }
+            updateRolesDisplay();
+        }
+        
+        function updateRolesDisplay() {
+            const email = localStorage.getItem('currentUser');
+            const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+            const userRoles = allUsers[email]?.roles || ['Staff'];
+            document.getElementById('rolesText').textContent = userRoles.join(', ');
+        }
+        
+        function addTeamMember() {
+            const email = document.getElementById('newMemberEmail').value;
+            const name = document.getElementById('newMemberName').value;
+            const role = document.getElementById('newMemberRole').value;
+            const location = document.getElementById('newMemberLocation').value;
+            
+            if (!email || !name || !role) {
+                alert('⚠️ Please fill all fields');
+                return;
+            }
+            
+            const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+            allUsers[email] = {
+                name: name,
+                role: role,
+                location: location,
+                roles: [role],
+                createdAt: new Date().toISOString()
+            };
+            localStorage.setItem('allUsers', JSON.stringify(allUsers));
+            
+            // Clear inputs
+            document.getElementById('newMemberEmail').value = '';
+            document.getElementById('newMemberName').value = '';
+            document.getElementById('newMemberRole').value = '';
+            
+            alert('✅ Team member added!');
+            loadTeamMembers();
+        }
+        
+        function loadTeamMembers() {
+            const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+            const list = document.getElementById('teamMembersList');
+            
+            if (Object.keys(allUsers).length === 0) {
+                list.innerHTML = '<div style="text-align:center;color:var(--muted);padding:20px;">No team members yet</div>';
+                return;
+            }
+            
+            list.innerHTML = Object.entries(allUsers).map(([email, user]) => `
+                <div style="background:var(--bg);padding:12px;border-radius:6px;border:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                    <div>
+                        <strong>${user.name}</strong>
+                        <div style="font-size:12px;color:var(--muted);">${email}</div>
+                        <div style="font-size:12px;margin-top:4px;">
+                            <span style="background:#e3f2fd;padding:2px 6px;border-radius:3px;margin-right:6px;">${user.roles?.join(', ') || user.role}</span>
+                            <span style="background:#f3e5f5;padding:2px 6px;border-radius:3px;">${user.location || 'All Locations'}</span>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:8px;">
+                        <button onclick="editTeamMember('${email}')" style="padding:6px 12px;background:#4488ff;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Edit</button>
+                        <button onclick="deleteTeamMember('${email}')" style="padding:6px 12px;background:#ff4444;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function editTeamMember(email) {
+            const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+            const user = allUsers[email];
+            const newRole = prompt('Enter new role (Admin, Manager, Staff, Viewer):', user.roles?.[0] || user.role);
+            if (newRole) {
+                user.roles = [newRole];
+                localStorage.setItem('allUsers', JSON.stringify(allUsers));
+                loadTeamMembers();
+            }
+        }
+        
+        function deleteTeamMember(email) {
+            if (confirm(`Delete ${email} from team?`)) {
+                const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+                delete allUsers[email];
+                localStorage.setItem('allUsers', JSON.stringify(allUsers));
+                loadTeamMembers();
+            }
+        }
+        
+        function showRecoveryCode() {
+            const code = localStorage.getItem('recoveryCode');
+            alert('Your Recovery Code:\\n' + code);
+        }
+        
+        function changePasswordInSettings() {
+            const current = document.getElementById('currentPassword').value;
+            const newPwd = document.getElementById('newPassword').value;
+            const confirm = document.getElementById('confirmPassword').value;
+            
+            if (newPwd !== confirm) {
+                alert('⚠️ Passwords do not match');
+                return;
+            }
+            
+            if (newPwd.length < 8) {
+                alert('⚠️ Password must be 8+ characters');
+                return;
+            }
+            
+            alert('✅ Password changed! (This would sync to backend)');
+            document.getElementById('currentPassword').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('confirmPassword').value = '';
+        }
+        
         
         // Show auth page
         function showAuthPage(page) {
@@ -2867,6 +3134,14 @@
             loadAllData();
             loadTheme();
             loadProfileData();
+            
+            // Initialize settings
+            currentUserLocation = localStorage.getItem('currentUserLocation') || 'All Locations';
+            populateLocationSelects();
+            loadTeamMembers();
+            document.getElementById('settingName').value = userName;
+            document.getElementById('settingJobTitle').value = userJobTitle;
+            
             setInterval(loadAllData, 30000);
             // Refresh expiry countdown every minute for real-time updates
             setInterval(() => {
@@ -2921,7 +3196,8 @@
                 categories = [...new Set(inventory.map(i => i.category || '').filter(Boolean))].sort();
                 subcategories = [...new Set(inventory.map(i => i.subcategory || '').filter(Boolean))].sort();
                 suppliers = [...new Set(inventory.map(i => i.supplier || '').filter(Boolean))].sort();
-                locations = [...new Set(inventory.map(i => i.location || '').filter(Boolean))].sort();\n                purchaseUnits = [...new Set(inventory.map(i => i.purchaseUnit || '').filter(Boolean))].sort();
+                locations = [...new Set(inventory.map(i => i.location || '').filter(Boolean))].sort();
+                purchaseUnits = [...new Set(inventory.map(i => i.purchaseUnit || '').filter(Boolean))].sort();
                 packUnits = [...new Set(inventory.map(i => i.packUnit || '').filter(Boolean))].sort();
             }
         }
@@ -3150,6 +3426,138 @@
             if (modal) {
                 modal.classList.remove('show');
             }
+        }
+        
+        function openEditModal(type, idx) {
+            let item = null;
+            if (type === 'inventory') item = inventory[idx];
+            else if (type === 'deliveries') item = deliveries[idx];
+            else if (type === 'expiry') item = expiryDates[idx];
+            else if (type === 'movements') item = movements[idx];
+            else if (type === 'waste') item = waste[idx];
+            
+            if (!item) return;
+            
+            // Create edit modal dynamically
+            let modalHTML = `<div id="editItemModal" class="modal" style="display:flex;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;">
+                <div style="background:white;padding:32px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:700px;width:90%;max-height:90vh;overflow-y:auto;">
+                    <h3 style="margin:0 0 20px;font-size:20px;">✎ Edit ${type}</h3>
+                    <div id="editFormFields" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">`;
+            
+            if (type === 'inventory') {
+                modalHTML += `
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Item Name</label><input type="text" id="edit_name" value="${item.name || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Category</label><select id="edit_category" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${categories.map(c => `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Subcategory</label><input type="text" id="edit_subcategory" value="${item.subcategory || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Purchase Unit</label><select id="edit_purchaseUnit" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${purchaseUnits.map(u => `<option value="${u}" ${item.purchaseUnit === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Pack Qty</label><input type="number" id="edit_packQty" value="${item.packQty || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Pack Unit</label><select id="edit_packUnit" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${packUnits.map(u => `<option value="${u}" ${item.packUnit === u ? 'selected' : ''}>${u}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Supplier</label><select id="edit_supplier" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${suppliers.map(s => `<option value="${s}" ${item.supplier === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Location</label><select id="edit_location" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${locations.map(l => `<option value="${l}" ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Total Stock</label><input type="number" id="edit_totalStock" value="${item.totalStock || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Min Stock</label><input type="number" id="edit_minStock" value="${item.minStock || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Ideal Stock</label><input type="number" id="edit_idealStock" value="${item.idealStock || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Reorder Point</label><input type="number" id="edit_reorderPoint" value="${item.reorderPoint || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Track Expiry</label><select id="edit_trackExpiry" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="No" ${item.trackExpiry === 'No' ? 'selected' : ''}>No</option><option value="Yes" ${item.trackExpiry === 'Yes' ? 'selected' : ''}>Yes</option></select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Track Waste</label><select id="edit_trackWaste" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="No" ${item.trackWaste === 'No' ? 'selected' : ''}>No</option><option value="Yes" ${item.trackWaste === 'Yes' ? 'selected' : ''}>Yes</option></select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Active</label><select id="edit_active" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="Yes" ${item.active === 'Yes' ? 'selected' : ''}>Yes</option><option value="No" ${item.active === 'No' ? 'selected' : ''}>No</option></select></div>
+                        <div style="grid-column:1/-1;"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Notes</label><textarea id="edit_notes" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;min-height:60px;">${item.notes || ''}</textarea></div>
+                    `;
+            } else if (type === 'deliveries') {
+                modalHTML += `
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Date Ordered</label><input type="date" id="edit_dateOrdered" value="${item.dateOrdered || item['Date Ordered'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Expected Delivery</label><input type="date" id="edit_expectedDelivery" value="${item.expectedDelivery || item['Expected Delivery'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Date Received</label><input type="date" id="edit_dateReceived" value="${item.dateReceived || item['Date Received'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Supplier</label><select id="edit_supplier" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${suppliers.map(s => `<option value="${s}" ${(item.supplier || item['Supplier']) === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Item</label><input type="text" id="edit_item" value="${item.item || item['Item'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Quantity</label><input type="number" id="edit_quantity" value="${item.quantity || item['Quantity'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Purchase Unit</label><input type="text" id="edit_purchaseUnit" value="${item.purchaseUnit || item['Purchase Unit'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Expiry Date</label><input type="date" id="edit_expiryDate" value="${item.expiryDate || item['Expiry Date'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">On Time</label><select id="edit_onTime" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option><option value="Yes" ${(item.onTime || item['On Time']) === 'Yes' ? 'selected' : ''}>Yes</option><option value="No" ${(item.onTime || item['On Time']) === 'No' ? 'selected' : ''}>No</option></select></div>
+                        <div style="grid-column:1/-1;"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Notes</label><textarea id="edit_notes" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;min-height:60px;">${item.notes || item['Notes'] || ''}</textarea></div>
+                    `;
+            } else if (type === 'expiry') {
+                modalHTML += `
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Item</label><input type="text" id="edit_item" value="${item.item || item['Item'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Category</label><select id="edit_category" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${categories.map(c => `<option value="${c}" ${item.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Subcategory</label><input type="text" id="edit_subcategory" value="${item.subcategory || item['Subcategory'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Location</label><select id="edit_location" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"><option value="">Select</option>${locations.map(l => `<option value="${l}" ${item.location === l ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Quantity</label><input type="number" id="edit_quantity" value="${item.quantity || item['Quantity'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Purchase Unit</label><input type="text" id="edit_purchaseUnit" value="${item.purchaseUnit || item['Purchase Unit'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                        <div style="grid-column:1/-1;"><label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;font-weight:600;">Expiry Date</label><input type="date" id="edit_expiryDate" value="${item.expiryDate || item['Expiry Date'] || ''}" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:6px;"/></div>
+                    `;
+            }
+            
+            modalHTML += `
+                    </div>
+                    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+                        <button onclick="document.getElementById('editItemModal')?.remove()" style="padding:10px 20px;border:1px solid var(--border);background:white;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>
+                        <button onclick="saveEditedItem('${type}', ${idx})" style="padding:10px 20px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Save Changes</button>
+                    </div>
+                </div>
+            </div>`;
+            
+            // Remove existing modal if any
+            const existingModal = document.getElementById('editItemModal');
+            if (existingModal) existingModal.remove();
+            
+            // Create and show new modal
+            const div = document.createElement('div');
+            div.innerHTML = modalHTML;
+            document.body.appendChild(div.querySelector('#editItemModal'));
+            document.getElementById('editItemModal').style.display = 'flex';
+        }
+        
+        function saveEditedItem(type, idx) {
+            let item = null;
+            if (type === 'inventory') {
+                item = inventory[idx];
+                item.name = document.getElementById('edit_name')?.value || item.name;
+                item.category = document.getElementById('edit_category')?.value || item.category;
+                item.subcategory = document.getElementById('edit_subcategory')?.value || item.subcategory;
+                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit;
+                item.packQty = document.getElementById('edit_packQty')?.value || item.packQty;
+                item.packUnit = document.getElementById('edit_packUnit')?.value || item.packUnit;
+                item.supplier = document.getElementById('edit_supplier')?.value || item.supplier;
+                item.location = document.getElementById('edit_location')?.value || item.location;
+                item.totalStock = document.getElementById('edit_totalStock')?.value || item.totalStock;
+                item.minStock = document.getElementById('edit_minStock')?.value || item.minStock;
+                item.idealStock = document.getElementById('edit_idealStock')?.value || item.idealStock;
+                item.reorderPoint = document.getElementById('edit_reorderPoint')?.value || item.reorderPoint;
+                item.trackExpiry = document.getElementById('edit_trackExpiry')?.value || item.trackExpiry;
+                item.trackWaste = document.getElementById('edit_trackWaste')?.value || item.trackWaste;
+                item.active = document.getElementById('edit_active')?.value || item.active;
+                item.notes = document.getElementById('edit_notes')?.value || item.notes;
+                localStorage.setItem('inventory', JSON.stringify(inventory));
+                renderTable();
+            } else if (type === 'deliveries') {
+                item = deliveries[idx];
+                item.dateOrdered = document.getElementById('edit_dateOrdered')?.value || item.dateOrdered || item['Date Ordered'];
+                item.expectedDelivery = document.getElementById('edit_expectedDelivery')?.value || item.expectedDelivery || item['Expected Delivery'];
+                item.dateReceived = document.getElementById('edit_dateReceived')?.value || item.dateReceived || item['Date Received'];
+                item.supplier = document.getElementById('edit_supplier')?.value || item.supplier || item['Supplier'];
+                item.item = document.getElementById('edit_item')?.value || item.item || item['Item'];
+                item.quantity = document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'];
+                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'];
+                item.expiryDate = document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date'];
+                item.onTime = document.getElementById('edit_onTime')?.value || item.onTime || item['On Time'];
+                item.notes = document.getElementById('edit_notes')?.value || item.notes || item['Notes'];
+                localStorage.setItem('userDeliveries', JSON.stringify(deliveries.filter(d => !d['Date Ordered'])));
+                renderDeliveriesTable();
+            } else if (type === 'expiry') {
+                item = expiryDates[idx];
+                item.item = document.getElementById('edit_item')?.value || item.item || item['Item'];
+                item.category = document.getElementById('edit_category')?.value || item.category || item['Category'];
+                item.subcategory = document.getElementById('edit_subcategory')?.value || item.subcategory || item['Subcategory'];
+                item.location = document.getElementById('edit_location')?.value || item.location || item['Location'];
+                item.quantity = document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'];
+                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'];
+                item.expiryDate = document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date'];
+                localStorage.setItem('expiryDates', JSON.stringify(expiryDates.filter(e => e.item)));
+                renderExpiryTable();
+            }
+            const modal = document.getElementById('editItemModal');
+            if (modal) modal.remove();
         }
         
         function showAddDeliveryModal() {
@@ -3472,7 +3880,7 @@
                 );
             }
             
-            const html = filtered.length > 0 ? filtered.map(d => `
+            const html = filtered.length > 0 ? filtered.map((d, idx) => `
                 <tr>
                     <td>${(d.dateOrdered || d['Date Ordered']) || '—'}</td>
                     <td>${(d.expectedDelivery || d['Expected Delivery']) || '—'}</td>
@@ -3484,8 +3892,9 @@
                     <td>${(d.expiryDate || d['Expiry Date']) || '—'}</td>
                     <td>${(d.onTime || d['On Time']) || '—'}</td>
                     <td>${(d.notes || d['Notes']) || '—'}</td>
+                    <td style="text-align:center;"><button onclick="openEditModal('deliveries', ${idx})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td>
                 </tr>
-            `).join('') : '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">No deliveries found</td></tr>';
+            `).join('') : '<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--muted);">No deliveries found</td></tr>';
             
             const tbody = document.getElementById('deliveriesRows');
             if (tbody) tbody.innerHTML = html;
@@ -3498,9 +3907,9 @@
             const filtered = inventory.filter(i => (i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q) || i.subcategory.toLowerCase().includes(q)) && (!cf || i.category === cf) && (!sf || i.supplier === sf));
             const html = filtered.map((i, idx) => {
                 const idx2 = inventory.indexOf(i);
-                return `<tr><td class="editable" onclick="editCell(this,'inventory',${idx2},'name')">${i.name}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'category')">${i.category}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'subcategory')">${i.subcategory}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'purchaseUnit')">${i.purchaseUnit}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'packQty')">${i.packQty}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'packUnit')">${i.packUnit}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'supplier')">${i.supplier}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'location')">${i.location}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'totalStock')">${i.totalStock}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'minStock')">${i.minStock}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'idealStock')">${i.idealStock}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'reorderPoint')">${i.reorderPoint}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'trackExpiry')">${i.trackExpiry}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'trackWaste')">${i.trackWaste}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'active')">${i.active}</td><td class="editable" onclick="editCell(this,'inventory',${idx2},'notes')">${i.notes}</td></tr>`;
+                return `<tr><td>${i.name}</td><td>${i.category}</td><td>${i.subcategory}</td><td>${i.purchaseUnit}</td><td>${i.packQty}</td><td>${i.packUnit}</td><td>${i.supplier}</td><td>${i.location}</td><td>${i.totalStock}</td><td>${i.minStock}</td><td>${i.idealStock}</td><td>${i.reorderPoint}</td><td>${i.trackExpiry}</td><td>${i.trackWaste}</td><td>${i.active}</td><td>${i.notes}</td><td style="text-align:center;"><button onclick="openEditModal('inventory', ${idx2})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td></tr>`;
             }).join('');
-            document.getElementById('stockRows').innerHTML = html || '<tr><td colspan="16" style="text-align:center;padding:20px;color:var(--muted)">No items</td></tr>';
+            document.getElementById('stockRows').innerHTML = html || '<tr><td colspan="17" style="text-align:center;padding:20px;color:var(--muted)">No items</td></tr>';
         }
         
         function renderMovementTable() {
@@ -3514,8 +3923,9 @@
                     <td>${m['To Location'] || '—'}</td>
                     <td>${m['Reason'] || '—'}</td>
                     <td>${m['Notes'] || '—'}</td>
+                    <td style="text-align:center;"><button onclick="openEditModal('movements', ${idx})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td>
                 </tr>
-            `).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No movements found</td></tr>';
+            `).join('') : '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted);">No movements found</td></tr>';
             
             const tbody = document.getElementById('movementRows');
             if (tbody) tbody.innerHTML = html;
@@ -3534,8 +3944,9 @@
         function getExpiryStatus(daysUntilExpiry) {
             if (daysUntilExpiry < 0) return 'Expired';
             if (daysUntilExpiry === 0) return 'Today';
-            if (daysUntilExpiry <= 7) return 'Critical';
-            if (daysUntilExpiry <= 30) return 'Warning';
+            if (daysUntilExpiry <= 3) return 'Critical';
+            if (daysUntilExpiry <= 7) return 'Warning';
+            if (daysUntilExpiry <= 30) return 'Caution';
             return 'Good';
         }
         
@@ -3545,19 +3956,23 @@
                 const expiryDate = e.expiryDate || e['Expiry Date'] || '';
                 const daysUntil = calculateDaysUntilExpiry(expiryDate);
                 const status = getExpiryStatus(daysUntil);
-                const statusColor = status === 'Expired' ? '#ff4444' : status === 'Critical' ? '#ff8800' : status === 'Today' ? '#ff6600' : status === 'Warning' ? '#ffbb00' : '#44bb44';
+                const statusColor = status === 'Expired' ? '#ff4444' : status === 'Today' ? '#ff6600' : status === 'Critical' ? '#ff2200' : status === 'Warning' ? '#ff8800' : status === 'Caution' ? '#ffbb00' : '#44bb44';
+                const displayDays = daysUntil < 0 ? `<strong style="color:#ff4444;">-${Math.abs(daysUntil)} days (EXPIRED)</strong>` : `<strong>${daysUntil} days</strong>`;
                 
                 return `
                 <tr>
                     <td>${e.item || e['Item'] || '—'}</td>
+                    <td>${e.category || e['Category'] || '—'}</td>
+                    <td>${e.subcategory || e['Subcategory'] || '—'}</td>
                     <td>${e.location || e['Location'] || '—'}</td>
                     <td>${e.quantity || e['Quantity'] || '—'}</td>
                     <td>${e.purchaseUnit || e['Purchase Unit'] || '—'}</td>
                     <td>${expiryDate || '—'}</td>
-                    <td><strong>${daysUntil >= 0 ? daysUntil + ' days' : 'EXPIRED'}</strong></td>
+                    <td>${displayDays}</td>
                     <td><span style="background:${statusColor};color:white;padding:4px 8px;border-radius:3px;font-size:12px;font-weight:600;">${status}</span></td>
+                    <td style="text-align:center;"><button onclick="openEditModal('expiry', ${idx})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td>
                 </tr>
-            `}).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates found</td></tr>';
+            `}).join('') : '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates found</td></tr>';
             
             const tbody = document.getElementById('expiryRows');
             if (tbody) tbody.innerHTML = html;
@@ -3572,8 +3987,9 @@
                     <td>${w['Quantity'] || '—'}</td>
                     <td>${w['Reason'] || '—'}</td>
                     <td>${w['Notes'] || '—'}</td>
+                    <td style="text-align:center;"><button onclick="openEditModal('waste', ${idx})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td>
                 </tr>
-            `).join('') : '<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted);">No waste entries found</td></tr>';
+            `).join('') : '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted);">No waste entries found</td></tr>';
             
             const tbody = document.getElementById('wasteRows');
             if (tbody) tbody.innerHTML = html;
@@ -3802,6 +4218,7 @@
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.getElementById(pageId).classList.add('active');
             document.getElementById('alertsPanel').classList.remove('open');
+            currentPage = pageId; // Update current page tracking
             if (window.innerWidth <= 768) {
                 document.querySelector('aside').classList.remove('mobile-open');
                 document.getElementById('sidebarOverlay').classList.remove('visible');
