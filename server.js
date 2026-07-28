@@ -138,6 +138,7 @@ db.run(`
         recoveryCode TEXT NOT NULL,
         role TEXT DEFAULT 'Staff',
         isPrimaryAdmin INTEGER DEFAULT 0,
+        isOwner INTEGER DEFAULT 0,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -145,20 +146,21 @@ db.run(`
     if (err) console.error('Table creation error:', err);
 });
 
-// Add isPrimaryAdmin column if it doesn't exist
-db.run(`PRAGMA table_info(users)`, (err, columns) => {
-    db.all(`PRAGMA table_info(users)`, (err, columns) => {
-        const hasPrimaryAdmin = columns?.some(col => col.name === 'isPrimaryAdmin');
-        if (!hasPrimaryAdmin) {
-            db.run(`ALTER TABLE users ADD COLUMN isPrimaryAdmin INTEGER DEFAULT 0`, (err) => {
-                if (err && !err.message.includes('duplicate column name')) {
-                    console.error('Failed to add isPrimaryAdmin column:', err);
-                } else if (!err) {
-                    console.log('✅ Added isPrimaryAdmin column to users table');
-                }
-            });
-        }
-    });
+// Add missing columns if they don't exist
+db.all(`PRAGMA table_info(users)`, (err, columns) => {
+    const columnNames = columns?.map(col => col.name) || [];
+    
+    if (!columnNames.includes('isPrimaryAdmin')) {
+        db.run(`ALTER TABLE users ADD COLUMN isPrimaryAdmin INTEGER DEFAULT 0`, (err) => {
+            if (!err) console.log('✅ Added isPrimaryAdmin column');
+        });
+    }
+    
+    if (!columnNames.includes('isOwner')) {
+        db.run(`ALTER TABLE users ADD COLUMN isOwner INTEGER DEFAULT 0`, (err) => {
+            if (!err) console.log('✅ Added isOwner column');
+        });
+    }
 });
 
 // Create recovery tokens table for password reset
@@ -396,17 +398,13 @@ app.post('/api/setup-admin', async (req, res) => {
             return res.status(400).json({ error: 'Email is required' });
         }
 
-        // Determine if this should be primary admin (Emily's email)
-        const isPrimary = email === 'emilyjreed01@gmail.com' ? 1 : 0;
+        // Determine special status
+        const isOwner = email === 'emilyjreed01@gmail.com' ? 1 : 0;
+        const role = isOwner ? 'Owner' : 'Admin';
 
-        // Update user to admin (and mark as primary admin if applicable)
-        const sql = isPrimary 
-            ? 'UPDATE users SET role = ?, isPrimaryAdmin = ? WHERE email = ?'
-            : 'UPDATE users SET role = ? WHERE email = ?';
-        
-        const params = isPrimary 
-            ? ['Admin', 1, email]
-            : ['Admin', email];
+        // Update user to admin/owner
+        const sql = 'UPDATE users SET role = ?, isPrimaryAdmin = ?, isOwner = ? WHERE email = ?';
+        const params = [role, isOwner, isOwner, email];
 
         db.run(sql, params, function(err) {
             if (err) {
@@ -419,10 +417,11 @@ app.post('/api/setup-admin', async (req, res) => {
 
             res.json({
                 success: true,
-                message: `${email} has been set as ${isPrimary ? 'Primary ' : ''}Admin`,
+                message: `${email} has been set as ${role}`,
                 email: email,
-                role: 'Admin',
-                isPrimaryAdmin: isPrimary
+                role: role,
+                isOwner: isOwner,
+                isPrimaryAdmin: isOwner
             });
         });
     } catch (error) {
@@ -464,6 +463,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
                 message: 'Login successful',
                 email: user.email,
                 role: user.role || 'Staff',
+                isOwner: user.isOwner || 0,
                 isPrimaryAdmin: user.isPrimaryAdmin || 0,
                 recoveryCode: user.recoveryCode.toString()
             });
