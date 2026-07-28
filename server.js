@@ -363,6 +363,45 @@ app.post('/api/register', loginLimiter, async (req, res) => {
     }
 });
 
+// Setup admin endpoint (with secret key for security)
+app.post('/api/setup-admin', async (req, res) => {
+    try {
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+        const setupKey = req.body.setupKey || '';
+        
+        // Check setup key (simple security)
+        const validSetupKey = 'ADMIN_SETUP_2024';
+        if (setupKey !== validSetupKey) {
+            return res.status(403).json({ error: 'Invalid setup key' });
+        }
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        // Update user to admin
+        db.run('UPDATE users SET role = ? WHERE email = ?', ['Admin', email], function(err) {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+
+            if (this.changes === 0) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+
+            res.json({
+                success: true,
+                message: `${email} has been set as Admin`,
+                email: email,
+                role: 'Admin'
+            });
+        });
+    } catch (error) {
+        console.error('Setup admin error:', error);
+        res.status(500).json({ error: 'Setup failed' });
+    }
+});
+
 // User Login
 app.post('/api/login', loginLimiter, async (req, res) => {
     try {
