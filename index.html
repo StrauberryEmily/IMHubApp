@@ -1777,11 +1777,12 @@
                                     <th>Quantity</th>
                                     <th>Purchase Unit</th>
                                     <th>Expiry Date</th>
+                                    <th>On Time</th>
                                     <th>Notes</th>
                                 </tr>
                             </thead>
                             <tbody id="deliveriesRows">
-                                <tr><td colspan="9" style="text-align:center;padding:30px">Loading...</td></tr>
+                                <tr><td colspan="10" style="text-align:center;padding:30px">Loading...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -2142,9 +2143,9 @@
         const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
         const DELIVERIES_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=585933402`;
         const EXPIRY_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2107953271`;
-        const MOVEMENTS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=661`;
-        const WASTE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1943984893`;
-        const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1738506826`;
+        const MOVEMENTS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2049517887`;
+        const WASTE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=805306269`;
+        const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=322069325`;
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
         
         let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [];
@@ -2960,7 +2961,19 @@
                     header: true,
                     skipEmptyLines: true,
                     complete: (results) => {
-                        deliveries = results.data.filter(row => row['Supplier'] && row['Supplier'].trim());
+                        deliveries = results.data.filter(row => row['Supplier'] && row['Supplier'].trim()).map(row => ({
+                            dateOrdered: row['Date Ordered'] || '',
+                            expectedDelivery: row['Expected Delivery'] || '',
+                            dateReceived: row['Date Received'] || '',
+                            timeTaken: row['Time Taken (Days)'] || '',
+                            supplier: row['Supplier'] || '',
+                            item: row['Item'] || '',
+                            quantity: row['Quantity'] || '',
+                            purchaseUnit: row['Purchase Unit'] || '',
+                            expiryDate: row['Expiry Date'] || '',
+                            onTime: row['On Time'] || '',
+                            notes: row['Notes'] || ''
+                        }));
                         // Merge with user-added entries (separate key to avoid sheet duplication)
                         const userDeliveries = JSON.parse(localStorage.getItem('userDeliveries') || '[]');
                         deliveries = [...deliveries, ...userDeliveries];
@@ -3409,17 +3422,18 @@
             
             const html = filtered.length > 0 ? filtered.map(d => `
                 <tr>
-                    <td>${d['Date Ordered'] || '—'}</td>
-                    <td>${d['Expected Delivery'] || '—'}</td>
-                    <td>${d['Date Received'] || '—'}</td>
-                    <td>${d['Supplier'] || '—'}</td>
-                    <td>${d['Item'] || '—'}</td>
-                    <td>${d['Quantity'] || '—'}</td>
-                    <td>${d['Purchase Unit'] || '—'}</td>
-                    <td>${d['Expiry Date'] || '—'}</td>
-                    <td>${d['Notes'] || '—'}</td>
+                    <td>${(d.dateOrdered || d['Date Ordered']) || '—'}</td>
+                    <td>${(d.expectedDelivery || d['Expected Delivery']) || '—'}</td>
+                    <td>${(d.dateReceived || d['Date Received']) || '—'}</td>
+                    <td>${(d.supplier || d['Supplier']) || '—'}</td>
+                    <td>${(d.item || d['Item']) || '—'}</td>
+                    <td>${(d.quantity || d['Quantity']) || '—'}</td>
+                    <td>${(d.purchaseUnit || d['Purchase Unit']) || '—'}</td>
+                    <td>${(d.expiryDate || d['Expiry Date']) || '—'}</td>
+                    <td>${(d.onTime || d['On Time']) || '—'}</td>
+                    <td>${(d.notes || d['Notes']) || '—'}</td>
                 </tr>
-            `).join('') : '<tr><td colspan="9" style="text-align:center;padding:30px;color:var(--muted);">No deliveries found</td></tr>';
+            `).join('') : '<tr><td colspan="10" style="text-align:center;padding:30px;color:var(--muted);">No deliveries found</td></tr>';
             
             const tbody = document.getElementById('deliveriesRows');
             if (tbody) tbody.innerHTML = html;
