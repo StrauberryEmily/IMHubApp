@@ -2516,10 +2516,10 @@
                     return;
                 }
                 
-                // Get user role from allUsers table
+                // Get user role from server response or allUsers table
                 const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
                 const userData = allUsers[email] || {};
-                const userRole = userData.role || 'Staff';
+                const userRole = data.role || userData.role || 'Staff';
                 
                 // Login successful - store in localStorage
                 localStorage.setItem('currentUser', data.email);

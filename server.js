@@ -136,6 +136,7 @@ db.run(`
         email TEXT UNIQUE NOT NULL,
         passwordHash TEXT NOT NULL,
         recoveryCode TEXT NOT NULL,
+        role TEXT DEFAULT 'Staff',
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -394,6 +395,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
                 success: true,
                 message: 'Login successful',
                 email: user.email,
+                role: user.role || 'Staff',
                 recoveryCode: user.recoveryCode.toString()
             });
         });
