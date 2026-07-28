@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 const { execSync, spawnSync } = require('child_process');
+const sqlite3 = require('sqlite3').verbose();
 
 // ============= ENCRYPTION HANDLING =============
 // Decrypt .env.enc if .env doesn't exist
@@ -55,6 +56,7 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:5000',
     'file://',  // for local file:// development
+    'https://imhubapp-production.up.railway.app',
     process.env.APP_URL || 'http://localhost:3000'
 ];
 
@@ -69,13 +71,16 @@ app.use(cors({
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
-            defaultSrc: ["'self'"],
-            styleSrc: ["'self'", "'unsafe-inline'"],
-            scriptSrc: ["'self'"],
-            imgSrc: ["'self'", 'data:', 'https:'],
+            defaultSrc: ["*"],
+            scriptSrc: ["*", "'unsafe-inline'"],
+            styleSrc: ["*", "'unsafe-inline'"],
+            scriptSrcAttr: ["'unsafe-inline'"],
+            imgSrc: ["*", "data:"],
+            connectSrc: ["*"],
+            mediaSrc: ["*"],
+            frameSrc: ["*"],
         },
     },
-    hsts: { maxAge: 31536000 },
 }));
 
 // Additional security headers
@@ -114,17 +119,44 @@ function validatePassword(password) {
     return hasUpper && hasNumber && hasMinLength;
 }
 
-// Input sanitization
-function sanitizeInput(input) {
-    if (typeof input !== 'string') return '';
-    return input.trim().replace(/[<>\"']/g, '');
-}
+// ============= DATABASE INITIALIZATION =============
+const dbPath = path.join(__dirname, 'users.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+    if (err) {
+        console.error('❌ Database connection error:', err);
+        process.exit(1);
+    }
+    console.log('✅ Database connected at', dbPath);
+});
 
-// Simple in-memory store for password reset tokens (in production, use a database)
-const passwordResetTokens = {};
+// Create users table if it doesn't exist
+db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        passwordHash TEXT NOT NULL,
+        recoveryCode TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+`, (err) => {
+    if (err) console.error('Table creation error:', err);
+});
 
-// In-memory user store (should be replaced with a real database in production)
-const users = {};
+// Create recovery tokens table for password reset
+db.run(`
+    CREATE TABLE IF NOT EXISTS recovery_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL,
+        token TEXT UNIQUE NOT NULL,
+        recoveryCode TEXT NOT NULL,
+        expiresAt DATETIME NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (email) REFERENCES users(email)
+    );
+`, (err) => {
+    if (err) console.error('Table creation error:', err);
+});
 // For Gmail: Use App Password (not your regular password)
 // Generate at: https://myaccount.google.com/apppasswords
 const transporter = nodemailer.createTransport({
@@ -256,6 +288,119 @@ app.post('/api/verify-reset-token', (req, res) => {
         email: resetData.email,
         token: token
     });
+});
+
+// ============= AUTHENTICATION ENDPOINTS =============
+
+// Helper function to sanitize input
+function sanitizeInput(input) {
+    if (typeof input !== 'string') return '';
+    return input.trim().replace(/[<>\"']/g, '');
+}
+
+// Helper function to generate 6-digit recovery code
+function generateRecoveryCode() {
+    return Math.floor(Math.random() * 900000) + 100000;
+}
+
+// User Registration
+app.post('/api/register', loginLimiter, async (req, res) => {
+    try {
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+        const password = req.body.password || '';
+        const fullName = sanitizeInput(req.body.fullName || '');
+
+        // Validation
+        if (!email || !password || !fullName) {
+            return res.status(400).json({ error: 'Email, password, and name are required' });
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ error: 'Invalid email format' });
+        }
+
+        if (password.length < 8 || !/\d/.test(password) || !/[A-Z]/.test(password)) {
+            return res.status(400).json({ error: 'Password must be 8+ characters with 1 number and 1 uppercase letter' });
+        }
+
+        // Check if user already exists
+        db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existing) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            if (existing) {
+                return res.status(400).json({ error: 'Email already registered' });
+            }
+
+            // Hash password
+            const passwordHash = await bcrypt.hash(password, 10);
+            const recoveryCode = generateRecoveryCode();
+
+            // Store user in database
+            db.run(
+                'INSERT INTO users (email, passwordHash, recoveryCode) VALUES (?, ?, ?)',
+                [email, passwordHash, recoveryCode],
+                function(err) {
+                    if (err) {
+                        return res.status(500).json({ error: 'Failed to create account' });
+                    }
+
+                    res.json({
+                        success: true,
+                        message: 'Account created successfully',
+                        recoveryCode: recoveryCode.toString(),
+                        email: email,
+                        fullName: fullName
+                    });
+                }
+            );
+        });
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// User Login
+app.post('/api/login', loginLimiter, async (req, res) => {
+    try {
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+        const password = req.body.password || '';
+
+        // Validation
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password required' });
+        }
+
+        // Find user in database
+        db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+            if (err) {
+                return res.status(500).json({ error: 'Database error' });
+            }
+            
+            if (!user) {
+                return res.status(401).json({ error: 'Invalid email or password' });
+            }
+
+            // Verify password
+            const passwordMatch = await bcrypt.compare(password, user.passwordHash);
+            if (!passwordMatch) {
+                return res.status(401).json({ error: 'Invalid email or password' });
+            }
+
+            // Login successful
+            res.json({
+                success: true,
+                message: 'Login successful',
+                email: user.email,
+                recoveryCode: user.recoveryCode.toString()
+            });
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Login failed' });
+    }
 });
 
 // Serve static files (CSS, JS, etc.)

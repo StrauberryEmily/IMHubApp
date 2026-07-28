@@ -2014,7 +2014,7 @@
                         <div style="margin:16px 0;">
                             <label style="display:block;font-size:12px;color:var(--muted);margin-bottom:4px;">Email Address</label>
                             <div style="display:flex;gap:8px;">
-                                <input type="email" id="emailInput" value="emily@imh.com" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;">
+                                <input type="email" id="emailInput" value="emilyjreed01@gmail.com" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;">
                                 <button class="btn primary" onclick="showChangeEmailModal()">Change</button>
                             </div>
                         </div>
@@ -2142,6 +2142,9 @@
         const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=0`;
         const DELIVERIES_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=585933402`;
         const EXPIRY_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=2107953271`;
+        const MOVEMENTS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=661`;
+        const WASTE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1943984893`;
+        const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=1738506826`;
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
         
         let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [];
@@ -2270,34 +2273,32 @@
             const errorDiv = document.getElementById('loginError');
             errorDiv.style.display = 'none';
             
-            // Get all users from localStorage
-            const users = JSON.parse(localStorage.getItem('imhUsers') || '{}');
-            
-            if (!users[email]) {
-                errorDiv.textContent = 'Email not found. Please create an account.';
-                errorDiv.style.display = 'block';
-                return;
-            }
-            
-            const user = users[email];
-            if (user.passwordHash !== hashPassword(password)) {
-                errorDiv.textContent = 'Incorrect password.';
-                errorDiv.style.display = 'block';
-                return;
-            }
-            
-            // Set current user
-            localStorage.setItem('currentUser', email);
-            localStorage.setItem('currentUserRole', user.role);
-            localStorage.setItem('currentUserName', user.name);
-            localStorage.setItem('currentUserJobTitle', user.jobTitle || 'Staff');
-            
-            // Check if device is already trusted
-            if (!isDeviceTrusted()) {
-                showDeviceTrustModal();
-            } else {
+            // Call backend API
+            fetch('/api/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                
+                // Login successful - store in localStorage
+                localStorage.setItem('currentUser', data.email);
+                localStorage.setItem('currentUserName', 'Emily Reed');
+                localStorage.setItem('currentUserJobTitle', 'Staff');
+                localStorage.setItem('recoveryCode', data.recoveryCode);
+                
                 checkAuth();
-            }
+            })
+            .catch(err => {
+                errorDiv.textContent = 'Login failed: ' + err.message;
+                errorDiv.style.display = 'block';
+            });
         }
         
         // Show device trust modal
@@ -2315,13 +2316,10 @@
             checkAuth();
         }
         
-        // Handle login
-        // function handleLogin(event) {
-        
         // Handle registration
         function handleRegister(event) {
             event.preventDefault();
-            const name = document.getElementById('regName').value.trim();
+            const fullName = document.getElementById('regName').value.trim();
             const email = document.getElementById('regEmail').value.toLowerCase().trim();
             const password = document.getElementById('regPassword').value;
             const confirmPassword = document.getElementById('regPasswordConfirm').value;
@@ -2329,7 +2327,7 @@
             errorDiv.style.display = 'none';
             
             // Validation
-            if (!name) {
+            if (!fullName) {
                 errorDiv.textContent = 'Please enter your full name.';
                 errorDiv.style.display = 'block';
                 return;
@@ -2347,36 +2345,36 @@
                 return;
             }
             
-            const users = JSON.parse(localStorage.getItem('imhUsers') || '{}');
-            
-            if (users[email]) {
-                errorDiv.textContent = 'An account with this email already exists.';
+            // Call backend API
+            fetch('/api/register', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password, fullName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    errorDiv.textContent = data.error;
+                    errorDiv.style.display = 'block';
+                    return;
+                }
+                
+                // Registration successful - auto-login
+                localStorage.setItem('currentUser', data.email);
+                localStorage.setItem('currentUserName', data.fullName || fullName);
+                localStorage.setItem('currentUserJobTitle', 'Staff');
+                localStorage.setItem('recoveryCode', data.recoveryCode);
+                
+                // Show recovery code to user
+                setTimeout(() => {
+                    alert(`Your account has been created!\n\nRecovery Code: ${data.recoveryCode}\n\nSave this code to recover your account if needed.`);
+                    checkAuth();
+                }, 300);
+            })
+            .catch(err => {
+                errorDiv.textContent = 'Registration failed: ' + err.message;
                 errorDiv.style.display = 'block';
-                return;
-            }
-            
-            // Create account with regular role by default
-            const recoveryCode = generateRecoveryCode();
-            const role = 'regular';
-            users[email] = {
-                name: name,
-                email: email,
-                passwordHash: hashPassword(password),
-                role: role,
-                jobTitle: 'Staff',
-                recoveryCode: recoveryCode,
-                createdAt: new Date().toISOString()
-            };
-            
-            localStorage.setItem('imhUsers', JSON.stringify(users));
-            
-            // Auto-login
-            localStorage.setItem('currentUser', email);
-            localStorage.setItem('currentUserRole', role);
-            localStorage.setItem('currentUserName', name);
-            localStorage.setItem('currentUserJobTitle', users[email].jobTitle);
-            
-            checkAuth();
+            });
         }
         
         // Handle forgot password
@@ -2927,12 +2925,24 @@
                     header: true,
                     skipEmptyLines: true,
                     complete: (results) => {
-                        inventory = results.data.filter(row => row['Item name'] && row['Item name'].trim()).map((row, i) => ({
-                            id: i + 1, name: row['Item name'] || '', category: row['Category'] || '', subcategory: row['Subcategory'] || '',
-                            purchaseUnit: row['Purchase Unit'] || '', packQty: row['Pack Qty'] || '', packUnit: row['Pack Unit'] || '',
-                            supplier: row['Supplier'] || '', location: row['Default Storage Location'] || '', trackExpiry: row['Track Expiry'] || '', 
-                            totalStock: row['Total Stock'] || '', minStock: row['Minimun Stock'] || '', idealStock: row['Ideal Stock'] || '', 
-                            reorderPoint: row['Reorder Point'] || '', trackWaste: row['Track Waste'] || '', active: row['Active'] || '', notes: row['Notes'] || ''
+                        inventory = results.data.filter(row => (row['Item name'] || row['Item ']) && (row['Item name'] || row['Item ']).trim()).map((row, i) => ({
+                            id: i + 1, 
+                            name: row['Item name'] || row['Item '] || '', 
+                            category: row['Category'] || '', 
+                            subcategory: row['Subcategory'] || '',
+                            purchaseUnit: row['Purchase Unit'] || '', 
+                            packQty: row['Pack Qty'] || '', 
+                            packUnit: row['Pack Unit'] || '',
+                            supplier: row['Supplier'] || '', 
+                            location: row['Default Storage Location'] || '', 
+                            trackExpiry: row['Track Expiry'] || '', 
+                            totalStock: row['Total Stock'] || '', 
+                            minStock: row['Minimun Stock'] || '', 
+                            idealStock: row['Ideal Stock'] || '', 
+                            reorderPoint: row['Reorder Point'] || '', 
+                            trackWaste: row['Track Waste '] || row['Track Waste'] || '', 
+                            active: row['Active'] || '', 
+                            notes: row['Notes'] || ''
                         }));
                         applyLocalEdits();
                         populateFilters();
@@ -2972,11 +2982,25 @@
             try {
                 const response = await fetch(EXPIRY_URL);
                 const csvText = await response.text();
-                Papa.parse(csvText, {
+                // Split into lines to skip first 2 empty header rows
+                const lines = csvText.split('\n');
+                const csvWithoutHeaders = lines.slice(2).join('\n');
+                
+                Papa.parse(csvWithoutHeaders, {
                     header: true,
                     skipEmptyLines: true,
                     complete: (results) => {
-                        expiryDates = results.data.filter(row => row['Item name'] && row['Item name'].trim());
+                        expiryDates = results.data.filter(row => (row['Item '] || row['Item']) && (row['Item '] || row['Item']).trim()).map(row => ({
+                            category: row['Category'] || '',
+                            subcategory: row['Subcategory'] || '',
+                            item: row['Item '] || row['Item'] || '',
+                            location: row['Location'] || '',
+                            quantity: row['Quantity'] || '',
+                            purchaseUnit: row['Purchase Unit'] || '',
+                            expiryDate: row['Expiry Date'] || '',
+                            daysUntilExpiry: row['Days until Expiry'] || '',
+                            status: row['Status'] || ''
+                        }));
                         // Also load from localStorage
                         const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
                         expiryDates = [...expiryDates, ...localExpiry];
@@ -3435,13 +3459,13 @@
             const filtered = expiryDates || [];
             const html = filtered.length > 0 ? filtered.map((e, idx) => `
                 <tr>
-                    <td>${e['Item'] || '—'}</td>
-                    <td>${e['Location'] || '—'}</td>
-                    <td>${e['Quantity'] || '—'}</td>
-                    <td>${e['Purchase Unit'] || '—'}</td>
-                    <td>${e['Expiry Date'] || '—'}</td>
-                    <td>${e['Days until Expiry'] || '—'}</td>
-                    <td><span style="background:${e['Status'] === 'Expired' ? '#ff4444' : e['Status'] === 'Critical' ? '#ff8800' : e['Status'] === 'Warning' ? '#ffbb00' : '#44bb44'};color:white;padding:4px 8px;border-radius:3px;font-size:12px;font-weight:600;">${e['Status'] || 'Good'}</span></td>
+                    <td>${e.item || e['Item'] || '—'}</td>
+                    <td>${e.location || e['Location'] || '—'}</td>
+                    <td>${e.quantity || e['Quantity'] || '—'}</td>
+                    <td>${e.purchaseUnit || e['Purchase Unit'] || '—'}</td>
+                    <td>${e.expiryDate || e['Expiry Date'] || '—'}</td>
+                    <td>${e.daysUntilExpiry || e['Days until Expiry'] || '—'}</td>
+                    <td><span style="background:${(e.status || e['Status']) === 'Expired' ? '#ff4444' : (e.status || e['Status']) === 'Critical' ? '#ff8800' : (e.status || e['Status']) === 'Warning' ? '#ffbb00' : '#44bb44'};color:white;padding:4px 8px;border-radius:3px;font-size:12px;font-weight:600;">${e.status || e['Status'] || 'Good'}</span></td>
                 </tr>
             `).join('') : '<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--muted);">No expiry dates found</td></tr>';
             
