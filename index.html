@@ -1717,7 +1717,7 @@
                         <select class="filter-dropdown" id="supplierFilter" onchange="renderTable()">
                             <option value="">All Suppliers</option>
                         </select>
-                        <button class="btn primary" onclick="exportCSV()">📥 Export</button>
+                        <!-- Export moved to Settings -->
                         <button class="btn primary" onclick="showAddStockModal()" style="margin-left: auto;">➕ Add Item</button>
                     </div>
                     <div class="tablewrap" style="overflow-x: auto;">
@@ -1762,7 +1762,7 @@
                         <select class="filter-dropdown" id="supplierFilter2" onchange="renderDeliveriesTable()">
                             <option value="">All Suppliers</option>
                         </select>
-                        <button class="btn primary" onclick="exportCSV('deliveries')">📥 Export</button>
+                        <!-- Export moved to Settings -->
                         <button class="btn primary" onclick="showAddDeliveryModal()" style="margin-left: auto;">➕ Add Delivery</button>
                     </div>
                     <div class="tablewrap" style="overflow-x: auto;">
@@ -1798,7 +1798,7 @@
                     </div>
                     <div class="toolbar">
                         <input id="expirySearch" class="search" placeholder="Search items..." oninput="renderExpiryTable()">
-                        <button class="btn primary" onclick="showAddExpiryModal()" style="margin-left: auto;">➕ Add Expiry</button>
+                        <button class="btn primary" onclick="if(checkAdminAccess('Adding expiry dates')) showAddExpiryModal()" data-admin-only style="margin-left: auto;">➕ Add Expiry</button>
                     </div>
                     <div class="tablewrap" style="overflow-x: auto;">
                         <table>
@@ -1848,6 +1848,19 @@
                         <div class="sub">Manage orders and order requests - Linked to Delivers sheet</div>
                     </div>
                     <div class="toolbar">
+                        <select id="orderingSupplierDropdown" style="padding:10px;border:1px solid var(--border);border-radius:6px;font-size:14px;cursor:pointer;" onchange="handleOrderingDropdown()">
+                            <option value="">🏪 Quick Order From...</option>
+                            <option value="coca-cola">Order Coca Cola</option>
+                            <option value="schweppes">Order Schweppes</option>
+                            <option value="lion">Order Lion</option>
+                            <option value="bunkers">Order Bunkers</option>
+                            <option value="vittoria">Order Vittoria Coffee</option>
+                            <option value="dilmah">Order Dilmah Tea</option>
+                            <option value="bidfood">Order BidFood</option>
+                            <option value="santos">Order Santos</option>
+                            <option value="springhill">Order SpringHill Farm</option>
+                            <option value="qantas">Order Qantas Items</option>
+                        </select>
                         <input id="orderSearch" class="search" placeholder="Search orders..." oninput="renderOrdersTable()">
                         <button class="btn primary" onclick="showAddOrderModal()">➕ New Order</button>
                         <button class="btn-secondary" onclick="showOrderRequests()">📤 View Requests</button>
@@ -2144,6 +2157,7 @@
                     <button onclick="showSettingsSection('location')" class="settings-btn" data-section="location" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">📍 Location</button>
                     <button onclick="showSettingsSection('team')" class="settings-btn" data-section="team" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">👥 Team</button>
                     <button onclick="showSettingsSection('security')" class="settings-btn" data-section="security" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">🔐 Security</button>
+                    <button onclick="showSettingsSection('export')" class="settings-btn" data-section="export" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">💾 Export & Backup</button>
                 </div>
                 
                 <!-- Settings Content -->
@@ -2192,8 +2206,12 @@
                     </div>
                     
                     <!-- Team Section (Admin Only) -->
-                    <div id="team-section" class="settings-section" style="display:none;">
+                    <div id="team-section" class="settings-section" style="display:none;" data-admin-only>
                         <h2>👥 Team Management</h2>
+                        <div id="adminWarning" style="background:#fff3cd;border:1px solid #ffb800;padding:12px;border-radius:6px;margin-bottom:16px;display:none;">
+                            <strong>⚠️ Admin Access Required</strong><br>
+                            Only administrators can manage team members.
+                        </div>
                         <p style="color:var(--muted);margin-top:8px;">Manage team members, assign roles and locations (Admin only)</p>
                         
                         <div style="margin-top:20px;margin-bottom:20px;">
@@ -2247,6 +2265,55 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <!-- Export Section (Admin Only) -->
+                    <div id="export-section" class="settings-section" style="display:none;" data-admin-only>
+                        <h2>💾 Export & Backup</h2>
+                        <div id="adminWarningExport" style="background:#fff3cd;border:1px solid #ffb800;padding:12px;border-radius:6px;margin-bottom:16px;display:none;">
+                            <strong>⚠️ Admin Access Required</strong><br>
+                            Only administrators can export data.
+                        </div>
+                        <p style="color:var(--muted);margin-top:8px;">Select which data to export. Exports will NOT merge with existing data.</p>
+                        
+                        <div style="margin-top:20px;background:#f9f9f9;padding:16px;border-radius:8px;">
+                            <h3 style="font-size:14px;font-weight:600;margin-bottom:12px;">📊 Data to Export</h3>
+                            <div style="display:grid;gap:10px;">
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportInventory" checked style="cursor:pointer;"/>
+                                    <span>📦 Inventory</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportDeliveries" checked style="cursor:pointer;"/>
+                                    <span>🚚 Deliveries</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportExpiry" checked style="cursor:pointer;"/>
+                                    <span>⏰ Expiry Dates</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportMovements" style="cursor:pointer;"/>
+                                    <span>↔️ Stock Movements</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportWaste" style="cursor:pointer;"/>
+                                    <span>🗑️ Waste Records</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportTasks" style="cursor:pointer;"/>
+                                    <span>✓ Tasks</span>
+                                </label>
+                                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                                    <input type="checkbox" id="exportUserData" style="cursor:pointer;"/>
+                                    <span>👤 User Settings & Profile</span>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div style="margin-top:20px;display:grid;gap:10px;">
+                            <button onclick="exportSelectedData()" style="width:100%;padding:12px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">💾 Export Selected Data</button>
+                            <button onclick="exportAllDataBackup()" style="width:100%;padding:12px;background:#4CAF50;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">💾 Complete Backup (All Data)</button>
+                        </div>
+                    </div>
                 </div>
             </div></div></section>
             <section id="help" class="page"><div class="page-content"><div class="top"><h1>Help</h1></div><div class="empty">Coming soon</div></div></section>
@@ -2267,7 +2334,7 @@
         
         // Dropdown collections from sheets
         let categories = [], subcategories = [], suppliers = [], locations = [], purchaseUnits = [], packUnits = [];
-        let currentUserLocation = 'All Locations', userRoles = {}; // {location: ['role1', 'role2']}
+        let currentUserLocation = 'All Locations', userRoles = {}, currentUserRole = 'Staff'; // User role for access control
         
         function extractDropdownOptions() {
             // Extract unique values from inventory for dropdowns
@@ -2439,10 +2506,16 @@
                     return;
                 }
                 
+                // Get user role from allUsers table
+                const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+                const userData = allUsers[email] || {};
+                const userRole = userData.role || 'Staff';
+                
                 // Login successful - store in localStorage
                 localStorage.setItem('currentUser', data.email);
-                localStorage.setItem('currentUserName', 'Emily Reed');
-                localStorage.setItem('currentUserJobTitle', 'Staff');
+                localStorage.setItem('currentUserName', userData.name || 'User');
+                localStorage.setItem('currentUserJobTitle', userData.location || 'Staff');
+                localStorage.setItem('userRole', userRole);
                 localStorage.setItem('recoveryCode', data.recoveryCode);
                 
                 checkAuth();
@@ -2604,13 +2677,53 @@
             document.getElementById('loginPassword').value = '';
         }
         
+        // Role-based access control
+        function isAdmin() {
+            return currentUserRole === 'Admin' || localStorage.getItem('userRole') === 'Admin';
+        }
+        
+        function checkAdminAccess(actionName) {
+            if (!isAdmin()) {
+                alert(`❌ ${actionName} is restricted to Administrators only.\nYour role: ${currentUserRole}`);
+                return false;
+            }
+            return true;
+        }
+        
+        function enforceAdminUI() {
+            // Hide/disable admin features for non-admin users
+            const adminButtons = document.querySelectorAll('[data-admin-only]');
+            adminButtons.forEach(btn => {
+                if (!isAdmin()) {
+                    btn.style.display = 'none';
+                }
+            });
+        }
+        
         // Settings Management
         function showSettingsSection(section) {
             document.querySelectorAll('.settings-section').forEach(s => s.style.display = 'none');
-            document.getElementById(section + '-section').style.display = 'block';
+            const sectionEl = document.getElementById(section + '-section');
+            sectionEl.style.display = 'block';
+            
+            // Check if admin-only and user is not admin
+            if (sectionEl.hasAttribute('data-admin-only')) {
+                const adminWarning = sectionEl.querySelector('#adminWarning');
+                const inputs = sectionEl.querySelectorAll('input, select, button:not([onclick*="close"])');
+                if (!isAdmin()) {
+                    if (adminWarning) adminWarning.style.display = 'block';
+                    inputs.forEach(inp => inp.disabled = true);
+                } else {
+                    if (adminWarning) adminWarning.style.display = 'none';
+                    inputs.forEach(inp => inp.disabled = false);
+                }
+            }
+            
             document.querySelectorAll('.settings-btn').forEach(b => b.style.background = 'white');
-            event.target.style.background = 'var(--pink)';
-            event.target.style.color = 'white';
+            if (event && event.target) {
+                event.target.style.background = 'var(--pink)';
+                event.target.style.color = 'white';
+            }
         }
         
         function saveProfileSettings() {
@@ -2618,6 +2731,13 @@
             const title = document.getElementById('settingJobTitle').value || localStorage.getItem('currentUserJobTitle');
             localStorage.setItem('currentUserName', name);
             localStorage.setItem('currentUserJobTitle', title);
+            // Keep backup keys in sync for compatibility
+            localStorage.setItem('userName', name);
+            localStorage.setItem('userJobTitle', title);
+            // Update UI immediately
+            if (document.getElementById('sidebarUserName')) document.getElementById('sidebarUserName').textContent = name;
+            const userNameEl = document.querySelector('.user-name');
+            if (userNameEl) userNameEl.textContent = name;
             alert('✅ Profile updated!');
         }
         
@@ -2651,6 +2771,8 @@
         }
         
         function addTeamMember() {
+            if (!checkAdminAccess('Adding team members')) return;
+            
             const email = document.getElementById('newMemberEmail').value;
             const name = document.getElementById('newMemberName').value;
             const role = document.getElementById('newMemberRole').value;
@@ -2708,17 +2830,22 @@
         }
         
         function editTeamMember(email) {
+            if (!checkAdminAccess('Editing team members')) return;
+            
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
             const user = allUsers[email];
             const newRole = prompt('Enter new role (Admin, Manager, Staff, Viewer):', user.roles?.[0] || user.role);
             if (newRole) {
                 user.roles = [newRole];
+                user.role = newRole;
                 localStorage.setItem('allUsers', JSON.stringify(allUsers));
                 loadTeamMembers();
             }
         }
         
         function deleteTeamMember(email) {
+            if (!checkAdminAccess('Deleting team members')) return;
+            
             if (confirm(`Delete ${email} from team?`)) {
                 const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
                 delete allUsers[email];
@@ -2988,23 +3115,9 @@
                     }
                     
                     let count = 0;
+                    // Do NOT merge - simply replace the data
                     Object.entries(backup.data).forEach(([key, val]) => {
-                        // Merge arrays, overwrite scalars/objects
-                        const existing = localStorage.getItem(key);
-                        if (existing && Array.isArray(val)) {
-                            let existingParsed;
-                            try { existingParsed = JSON.parse(existing); } catch(e) { existingParsed = null; }
-                            if (Array.isArray(existingParsed)) {
-                                const merged = [...existingParsed, ...val.filter(newItem =>
-                                    !existingParsed.some(ex => JSON.stringify(ex) === JSON.stringify(newItem))
-                                )];
-                                localStorage.setItem(key, JSON.stringify(merged));
-                            } else {
-                                localStorage.setItem(key, JSON.stringify(val));
-                            }
-                        } else {
-                            localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
-                        }
+                        localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val));
                         count++;
                     });
                     
@@ -3120,9 +3233,12 @@
             document.getElementById('jobTitleInput').value = userJobTitle;
             document.getElementById('emailInput').value = userEmail;
             
-            // Load and display recovery code
+            // Load user role and recovery code
             const users = JSON.parse(localStorage.getItem('imhUsers') || '{}');
-            const user = users[userEmail];
+            const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+            const user = users[userEmail] || allUsers[userEmail];
+            currentUserRole = user?.role || 'Staff';
+            localStorage.setItem('userRole', currentUserRole);
             if (user) {
                 document.getElementById('recoveryCodeDisplay').textContent = user.recoveryCode;
             }
@@ -3137,10 +3253,14 @@
             
             // Initialize settings
             currentUserLocation = localStorage.getItem('currentUserLocation') || 'All Locations';
+            currentUserRole = localStorage.getItem('userRole') || 'Staff';
             populateLocationSelects();
             loadTeamMembers();
             document.getElementById('settingName').value = userName;
             document.getElementById('settingJobTitle').value = userJobTitle;
+            
+            // Enforce role-based UI
+            enforceAdminUI();
             
             setInterval(loadAllData, 30000);
             // Refresh expiry countdown every minute for real-time updates
@@ -3250,33 +3370,38 @@
             try {
                 const response = await fetch(CSV_URL);
                 const csvText = await response.text();
-                Papa.parse(csvText, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        inventory = results.data.filter(row => (row['Item name'] || row['Item ']) && (row['Item name'] || row['Item ']).trim()).map((row, i) => ({
-                            id: i + 1, 
-                            name: row['Item name'] || row['Item '] || '', 
-                            category: row['Category'] || '', 
-                            subcategory: row['Subcategory'] || '',
-                            purchaseUnit: row['Purchase Unit'] || '', 
-                            packQty: row['Pack Qty'] || '', 
-                            packUnit: row['Pack Unit'] || '',
-                            supplier: row['Supplier'] || '', 
-                            location: row['Default Storage Location'] || '', 
-                            trackExpiry: row['Track Expiry'] || '', 
-                            totalStock: row['Total Stock'] || '', 
-                            minStock: row['Minimun Stock'] || '', 
-                            idealStock: row['Ideal Stock'] || '', 
-                            reorderPoint: row['Reorder Point'] || '', 
-                            trackWaste: row['Track Waste '] || row['Track Waste'] || '', 
-                            active: row['Active'] || '', 
-                            notes: row['Notes'] || ''
-                        }));
-                        applyLocalEdits();
-                        populateFilters();
-                        renderTable();
-                    }
+                
+                // Wrap Papa.parse in a Promise to properly await it
+                await new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            inventory = results.data.filter(row => (row['Item name'] || row['Item ']) && (row['Item name'] || row['Item ']).trim()).map((row, i) => ({
+                                id: i + 1, 
+                                name: row['Item name'] || row['Item '] || '', 
+                                category: row['Category'] || '', 
+                                subcategory: row['Subcategory'] || '',
+                                purchaseUnit: row['Purchase Unit'] || '', 
+                                packQty: row['Pack Qty'] || '', 
+                                packUnit: row['Pack Unit'] || '',
+                                supplier: row['Supplier'] || '', 
+                                location: row['Default Storage Location'] || '', 
+                                trackExpiry: row['Track Expiry'] || '', 
+                                totalStock: row['Total Stock'] || '', 
+                                minStock: row['Minimun Stock'] || '', 
+                                idealStock: row['Ideal Stock'] || '', 
+                                reorderPoint: row['Reorder Point'] || '', 
+                                trackWaste: row['Track Waste '] || row['Track Waste'] || '', 
+                                active: row['Active'] || '', 
+                                notes: row['Notes'] || ''
+                            }));
+                            applyLocalEdits();
+                            populateFilters();
+                            renderTable();
+                            resolve();
+                        }
+                    });
                 });
             } catch (e) { console.error('Inventory load error:', e); }
         }
@@ -3285,30 +3410,35 @@
             try {
                 const response = await fetch(DELIVERIES_URL);
                 const csvText = await response.text();
-                Papa.parse(csvText, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        deliveries = results.data.filter(row => row['Supplier'] && row['Supplier'].trim()).map(row => ({
-                            dateOrdered: row['Date Ordered'] || '',
-                            expectedDelivery: row['Expected Delivery'] || '',
-                            dateReceived: row['Date Received'] || '',
-                            timeTaken: row['Time Taken (Days)'] || '',
-                            supplier: row['Supplier'] || '',
-                            item: row['Item'] || '',
-                            quantity: row['Quantity'] || '',
-                            purchaseUnit: row['Purchase Unit'] || '',
-                            expiryDate: row['Expiry Date'] || '',
-                            onTime: row['On Time'] || '',
-                            notes: row['Notes'] || ''
-                        }));
-                        // Merge with user-added entries (separate key to avoid sheet duplication)
-                        const userDeliveries = JSON.parse(localStorage.getItem('userDeliveries') || '[]');
-                        deliveries = [...deliveries, ...userDeliveries];
-                        populateFilters();
-                        updateDeliveriesWidget();
-                        renderDeliveriesTable();
-                    }
+                
+                // Wrap Papa.parse in a Promise to properly await it
+                await new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            deliveries = results.data.filter(row => row['Supplier'] && row['Supplier'].trim()).map(row => ({
+                                dateOrdered: row['Date Ordered'] || '',
+                                expectedDelivery: row['Expected Delivery'] || '',
+                                dateReceived: row['Date Received'] || '',
+                                timeTaken: row['Time Taken (Days)'] || '',
+                                supplier: row['Supplier'] || '',
+                                item: row['Item'] || '',
+                                quantity: row['Quantity'] || '',
+                                purchaseUnit: row['Purchase Unit'] || '',
+                                expiryDate: row['Expiry Date'] || '',
+                                onTime: row['On Time'] || '',
+                                notes: row['Notes'] || ''
+                            }));
+                            // Merge with user-added entries (separate key to avoid sheet duplication)
+                            const userDeliveries = JSON.parse(localStorage.getItem('userDeliveries') || '[]');
+                            deliveries = [...deliveries, ...userDeliveries];
+                            populateFilters();
+                            updateDeliveriesWidget();
+                            renderDeliveriesTable();
+                            resolve();
+                        }
+                    });
                 });
             } catch (e) { 
                 console.error('Deliveries load error:', e);
@@ -3327,28 +3457,31 @@
                 const lines = csvText.split('\n');
                 const csvWithoutHeaders = lines.slice(2).join('\n');
                 
-                Papa.parse(csvWithoutHeaders, {
-                    header: true,
-                    skipEmptyLines: true,
-                    complete: (results) => {
-                        expiryDates = results.data.filter(row => (row['Item '] || row['Item']) && (row['Item '] || row['Item']).trim()).map(row => ({
-                            category: row['Category'] || '',
-                            subcategory: row['Subcategory'] || '',
-                            item: row['Item '] || row['Item'] || '',
-                            location: row['Location'] || '',
-                            quantity: row['Quantity'] || '',
-                            purchaseUnit: row['Purchase Unit'] || '',
-                            expiryDate: row['Expiry Date'] || '',
-                            daysUntilExpiry: row['Days until Expiry'] || '',
-                            status: row['Status'] || ''
-                        }));
-                        // Also load from localStorage
-                        const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
-                        expiryDates = [...expiryDates, ...localExpiry];
-                        populateFilters();
-                        updateExpiryMetrics();
-                        renderExpiryTable();
-                    }
+                // Wrap Papa.parse in a Promise to properly await it
+                await new Promise((resolve) => {
+                    Papa.parse(csvWithoutHeaders, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            expiryDates = results.data.filter(row => (row['Item '] || row['Item']) && (row['Item '] || row['Item']).trim()).map(row => ({
+                                category: row['Category'] || '',
+                                subcategory: row['Subcategory'] || '',
+                                item: row['Item '] || row['Item'] || '',
+                                location: row['Location'] || '',
+                                quantity: row['Quantity'] || '',
+                                purchaseUnit: row['Purchase Unit'] || '',
+                                expiryDate: row['Expiry Date'] || '',
+                                daysUntilExpiry: row['Days until Expiry'] || '',
+                                status: row['Status'] || ''
+                            }));
+                            // Also load from localStorage
+                            const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
+                            expiryDates = [...expiryDates, ...localExpiry];
+                            populateFilters();
+                            renderExpiryTable();
+                            resolve();
+                        }
+                    });
                 });
             } catch (e) { 
                 console.error('Expiry load error:', e);
@@ -3384,6 +3517,7 @@
             const activeItems = inventory.filter(i => i.active && i.active.toLowerCase() === 'true').length;
             const healthPercent = Math.round((activeItems / inventory.length) * 100) || 0;
             document.getElementById('healthPercent').textContent = healthPercent + '%';
+            updateExpiryMetrics(); // Update expiry metrics
             renderQuickTasks();
             renderActivities();
             updateActionCentre();
@@ -3398,17 +3532,20 @@
         }
         
         function updateExpiryMetrics() {
-            const today = new Date();
-            let t = 0, w = 0, m = 0;
-            expiryDates.forEach(item => {
-                const d = item['Expiry Date'] ? new Date(item['Expiry Date']) : null;
-                if (!d) return;
-                const days = Math.ceil((d - today) / (1000 * 60 * 60 * 24));
-                if (days <= 0) t++; if (days <= 7 && days > 0) w++; if (days <= 30 && days > 7) m++;
+            let today = 0, sevenDays = 0, thirtyDays = 0;
+            (expiryDates || []).forEach(item => {
+                const expiryDate = item.expiryDate || item['Expiry Date'] || '';
+                const daysUntil = calculateDaysUntilExpiry(expiryDate);
+                if (daysUntil === 0) today++;
+                else if (daysUntil > 0 && daysUntil <= 7) sevenDays++;
+                else if (daysUntil > 7 && daysUntil <= 30) thirtyDays++;
             });
-            document.getElementById('expireToday').textContent = t;
-            document.getElementById('expire7days').textContent = w;
-            document.getElementById('expire30days').textContent = m;
+            const todayEl = document.getElementById('expireToday');
+            const sevenEl = document.getElementById('expire7days');
+            const thirtyEl = document.getElementById('expire30days');
+            if (todayEl) todayEl.textContent = today;
+            if (sevenEl) sevenEl.textContent = sevenDays;
+            if (thirtyEl) thirtyEl.textContent = thirtyDays;
         }
         
         // ============= MODALS FOR ADDING ITEMS =============
@@ -4174,6 +4311,95 @@
             a.click();
         }
         
+        function exportSelectedData() {
+            // Admin check
+            if (!checkAdminAccess('Exporting data')) return;
+            
+            const backup = {
+                exportedAt: new Date().toISOString(),
+                version: '1.0',
+                data: {}
+            };
+            
+            // Collect selected data
+            if (document.getElementById('exportInventory').checked) {
+                backup.data.inventory = inventory;
+            }
+            if (document.getElementById('exportDeliveries').checked) {
+                backup.data.deliveries = deliveries;
+            }
+            if (document.getElementById('exportExpiry').checked) {
+                backup.data.expiryDates = expiryDates;
+            }
+            if (document.getElementById('exportMovements').checked) {
+                backup.data.movements = movements;
+            }
+            if (document.getElementById('exportWaste').checked) {
+                backup.data.waste = waste;
+            }
+            if (document.getElementById('exportTasks').checked) {
+                backup.data.tasks = tasks;
+            }
+            if (document.getElementById('exportUserData').checked) {
+                backup.data.userSettings = {
+                    currentUserName: localStorage.getItem('currentUserName'),
+                    currentUserJobTitle: localStorage.getItem('currentUserJobTitle'),
+                    userThemeColor: localStorage.getItem('userThemeColor'),
+                    userThemeName: localStorage.getItem('userThemeName')
+                };
+            }
+            
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'IMH-export-' + new Date().toISOString().split('T')[0] + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            alert('✅ Export completed! File will not merge with existing data on import.');
+        }
+        
+        function exportAllDataBackup() {
+            // Admin check
+            if (!checkAdminAccess('Creating backups')) return;
+            
+            const backupKeys = [
+                'inventory_tasks', 'movements', 'userDeliveries', 'expiryDates',
+                'waste', 'inventory_edits', 'inventory_activities', 'imhUsers', 'allUsers',
+                'currentUser', 'userName', 'currentUserName', 'currentUserJobTitle',
+                'currentUserRole', 'userJobTitle', 'userThemeColor', 'userThemeName',
+                'isLayoutLocked', 'trustedDevices', 'userProfileImage', 'userCoverPhoto'
+            ];
+            
+            const backup = {
+                exportedAt: new Date().toISOString(),
+                version: '1.0',
+                data: {}
+            };
+            
+            backupKeys.forEach(key => {
+                const val = localStorage.getItem(key);
+                if (val !== null) {
+                    try {
+                        backup.data[key] = JSON.parse(val);
+                    } catch (e) {
+                        backup.data[key] = val; // plain string value
+                    }
+                }
+            });
+            
+            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'IMH-backup-' + new Date().toISOString().split('T')[0] + '.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            
+            alert('✅ Complete backup created! Import this file in the Import section to restore (will NOT merge with existing data).');
+        }
+        
         function handleProfileImageUpload(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -4248,6 +4474,15 @@
             localStorage.setItem('orderingTabType', type);
             // You can expand on this to show different content based on the type
             console.log('Showing ordering tab:', type);
+        }
+        
+        function handleOrderingDropdown() {
+            const dropdown = document.getElementById('orderingSupplierDropdown');
+            const selectedValue = dropdown.value;
+            if (selectedValue) {
+                alert('🔔 Coming Soon! Order functionality for this supplier will be available shortly.');
+                dropdown.value = ''; // Reset dropdown
+            }
         }
         
         // Theme switching
@@ -4338,20 +4573,25 @@
         }
         
         function loadProfileData() {
-            const savedName = localStorage.getItem('userName');
-            const savedJobTitle = localStorage.getItem('userJobTitle');
+            // Use unified keys for profile settings
+            const savedName = localStorage.getItem('currentUserName') || localStorage.getItem('userName');
+            const savedJobTitle = localStorage.getItem('currentUserJobTitle') || localStorage.getItem('userJobTitle');
             const savedCover = localStorage.getItem('userCoverPhoto');
             const savedPhoto = localStorage.getItem('userProfileImage');
             
             if (savedName) {
-                document.getElementById('fullNameInput').value = savedName;
-                document.getElementById('sidebarUserName').textContent = savedName;
-                document.querySelector('.user-name').textContent = savedName;
+                if (document.getElementById('settingName')) document.getElementById('settingName').value = savedName;
+                if (document.getElementById('fullNameInput')) document.getElementById('fullNameInput').value = savedName;
+                if (document.getElementById('sidebarUserName')) document.getElementById('sidebarUserName').textContent = savedName;
+                const userNameEl = document.querySelector('.user-name');
+                if (userNameEl) userNameEl.textContent = savedName;
             }
             if (savedJobTitle) {
-                document.getElementById('jobTitleInput').value = savedJobTitle;
-                document.getElementById('sidebarJobTitle').textContent = savedJobTitle;
-                document.querySelector('.user-role').textContent = savedJobTitle;
+                if (document.getElementById('settingJobTitle')) document.getElementById('settingJobTitle').value = savedJobTitle;
+                if (document.getElementById('jobTitleInput')) document.getElementById('jobTitleInput').value = savedJobTitle;
+                if (document.getElementById('sidebarJobTitle')) document.getElementById('sidebarJobTitle').textContent = savedJobTitle;
+                const userRoleEl = document.querySelector('.user-role');
+                if (userRoleEl) userRoleEl.textContent = savedJobTitle;
             }
             if (savedCover) {
                 document.getElementById('coverPhotoContainer').style.backgroundImage = `url('${savedCover}')`;
@@ -4359,9 +4599,20 @@
                 document.getElementById('coverPhotoContainer').style.color = 'transparent';
             }
             if (savedPhoto) {
-                document.getElementById('largeProfileImg').src = savedPhoto;
-                document.getElementById('largeProfileImg').style.display = 'block';
-                document.getElementById('largeProfileText').style.display = 'none';
+                const profileImg = document.getElementById('profilePicImg');
+                const profileText = document.getElementById('profilePicText');
+                const topImg = document.getElementById('topProfileImg');
+                const topText = document.getElementById('topProfileText');
+                
+                if (profileImg) { profileImg.src = savedPhoto; profileImg.style.display = 'block'; }
+                if (profileText) profileText.style.display = 'none';
+                if (topImg) { topImg.src = savedPhoto; topImg.style.display = 'block'; }
+                if (topText) topText.style.display = 'none';
+                
+                const largeImg = document.getElementById('largeProfileImg');
+                if (largeImg) { largeImg.src = savedPhoto; largeImg.style.display = 'block'; }
+                const largeText = document.getElementById('largeProfileText');
+                if (largeText) largeText.style.display = 'none';
             }
         }
         
