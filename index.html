@@ -3557,6 +3557,7 @@
                             expiryDates = [...expiryDates, ...localExpiry];
                             populateFilters();
                             renderExpiryTable();
+                            updateExpiryMetrics();
                             resolve();
                         }
                     });
@@ -3566,7 +3567,18 @@
                 // Fallback to localStorage
                 const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
                 expiryDates = localExpiry;
+                
+                // If still empty, add sample data for testing
+                if (expiryDates.length === 0) {
+                    expiryDates = [
+                        {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
+                        {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
+                        {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
+                        {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
+                    ];
+                }
                 renderExpiryTable();
+                updateExpiryMetrics();
             }
         }
 
