@@ -1637,9 +1637,7 @@
                         <div class="widget">
                             <div class="widget-title" style="color:#d9534f;font-weight:700;">⚠️ EXPIRY ALERT</div>
                             <div id="expiriesContent" style="max-height:200px;overflow-y:auto;">
-                                <div class="list-item" style="border-left:3px solid #d9534f;padding-left:12px;background:#fff5f5;"><span class="item-name" style="color:#d9534f;font-weight:700;">🔴 1 EXPIRED (Cheese)</span></div>
-                                <div class="list-item" style="border-left:3px solid #f0ad4e;padding-left:12px;background:#fffbf0;"><span class="item-name" style="color:#f0ad4e;font-weight:700;">⚠️ 1 Expire Today (Bread)</span></div>
-                                <div class="list-item" style="border:none;padding-top:0"><span class="item-name"><span style="color:#f0ad4e;">📅</span> 2 in 7 Days (Milk, Yogurt)</span></div>
+                                <div style="padding:12px 0;color:var(--muted);font-size:13px;">Loading expiry data from spreadsheet…</div>
                             </div>
                             <a class="widget-link" onclick="showPage('expiry')">View all expiries →</a>
                         </div>
@@ -1666,7 +1664,7 @@
                         <div class="widget">
                             <div class="widget-title">Expired & Expiring Soon</div>
                             <div id="expiredItemsWidget" style="max-height:200px;overflow-y:auto;">
-                                <div style="padding:12px 0;text-align:center;color:var(--muted);font-size:13px;">No expired items</div>
+                                <div style="padding:12px 0;text-align:center;color:var(--muted);font-size:13px;">Loading expiry data from spreadsheet…</div>
                             </div>
                             <a class="widget-link" onclick="showPage('expiry')">View all →</a>
                         </div>
@@ -3353,15 +3351,10 @@
             }, 60000);
         }
         
-        // Initialize expiry widget immediately with test data
+        // Initialize expiry widget with an empty state until the spreadsheet data loads.
         function initializeExpiryWidget() {
             console.log('[DEBUG] Initializing expiry widget');
-            expiryDates = [
-                {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
-                {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
-                {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
-                {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
-            ];
+            expiryDates = [];
             updateExpiryMetrics();
         }
         
@@ -3575,19 +3568,6 @@
                                 daysUntilExpiry: row['Days until Expiry'] || '',
                                 status: row['Status'] || ''
                             }));
-                            // Also load from localStorage
-                            const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
-                            expiryDates = [...expiryDates, ...localExpiry];
-                            
-                            // If still empty, add sample data for testing
-                            if (expiryDates.length === 0) {
-                                expiryDates = [
-                                    {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
-                                    {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
-                                    {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
-                                    {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
-                                ];
-                            }
                             
                             populateFilters();
                             renderExpiryTable();
@@ -3598,19 +3578,7 @@
                 });
             } catch (e) { 
                 console.error('Expiry load error:', e);
-                // Fallback to localStorage
-                const localExpiry = JSON.parse(localStorage.getItem('expiryDates') || '[]');
-                expiryDates = localExpiry;
-                
-                // If still empty, add sample data for testing
-                if (expiryDates.length === 0) {
-                    expiryDates = [
-                        {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
-                        {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
-                        {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
-                        {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
-                    ];
-                }
+                expiryDates = [];
                 renderExpiryTable();
                 updateExpiryMetrics();
             }
@@ -3723,21 +3691,21 @@
                 html += `<div class="list-item"><span class="item-name"><span style="color:#5bc0de;">📅</span> ${thirtyDays.length} in 30 Days</span></div>`;
             }
             
-            // If nothing expired or expiring soon, show status
+            // If nothing expired or expiring soon, show a neutral empty state
             if (expired.length === 0 && today.length === 0 && sevenDays.length === 0 && thirtyDays.length === 0) {
-                const itemsWithoutExpiry = (expiryDates || []).filter(item => {
-                    const expiryDate = item.expiryDate || item['Expiry Date'] || '';
-                    return !expiryDate || expiryDate.trim() === '';
-                }).length;
-                
-                if (itemsWithoutExpiry > 0) {
-                    html = `<div style="padding:12px 0;color:var(--muted);font-size:13px;">✅ All items OK | ${itemsWithoutExpiry} items pending expiry date</div>`;
+                if ((expiryDates || []).length === 0) {
+                    html = `<div style="padding:12px 0;color:var(--muted);font-size:13px;">No expiry data from spreadsheet yet</div>`;
                 } else {
-                    html = `<div style="padding:12px 0;color:var(--muted);font-size:13px;">✅ All items OK</div>`;
+                    const itemsWithoutExpiry = (expiryDates || []).filter(item => {
+                        const expiryDate = item.expiryDate || item['Expiry Date'] || '';
+                        return !expiryDate || expiryDate.trim() === '';
+                    }).length;
+                    
+                    html = `<div style="padding:12px 0;color:var(--muted);font-size:13px;">${itemsWithoutExpiry > 0 ? `${itemsWithoutExpiry} items pending expiry date` : 'No items expiring soon'}</div>`;
                 }
             }
             
-            content.innerHTML = html || '<div style="padding:12px 0;color:var(--muted);font-size:13px;">No expiry data</div>';
+            content.innerHTML = html || '<div style="padding:12px 0;color:var(--muted);font-size:13px;">No expiry data from spreadsheet yet</div>';
         }
 
         function updateExpiredItemsWidget(expired, today) {
@@ -3752,7 +3720,8 @@
             }).slice(0, 10); // Show top 10
 
             if (criticalItems.length === 0) {
-                content.innerHTML = '<div style="padding:12px 0;text-align:center;color:var(--muted);font-size:13px;">No expired items</div>';
+                const hasData = (expiryDates || []).length > 0;
+                content.innerHTML = `<div style="padding:12px 0;text-align:center;color:var(--muted);font-size:13px;">${hasData ? 'No items expiring soon' : 'No expiry data from spreadsheet yet'}</div>`;
                 return;
             }
 
@@ -4900,32 +4869,19 @@
         // Initialize authentication on page load
         checkAuth();
         
-        // Fallback: Ensure expiry widget is populated even if data loads slowly
+        // Fallback: Ensure the expiry widget updates even if the sheet load is slow.
         (function() {
-            // Check and update widget multiple times to catch slow loads
             const checkAndUpdateWidget = function() {
                 const content = document.getElementById('expiriesContent');
                 if (!content) return;
                 
                 if (content.innerHTML.includes('Loading expiry data')) {
-                    // Widget still showing loading - populate with test data
-                    if (!expiryDates || expiryDates.length === 0) {
-                        expiryDates = [
-                            {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
-                            {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
-                            {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
-                            {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
-                        ];
-                    }
-                    // Update the widget with data
                     if (typeof updateExpiryMetrics === 'function') {
                         updateExpiryMetrics();
-                        console.log('[DEBUG] Fallback: updateExpiryMetrics() called');
                     }
                 }
             };
             
-            // Check at multiple intervals
             setTimeout(checkAndUpdateWidget, 1000);
             setTimeout(checkAndUpdateWidget, 2000);
             setTimeout(checkAndUpdateWidget, 3000);
