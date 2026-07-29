@@ -2339,12 +2339,45 @@
         const WASTE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=805306269`;
         const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=322069325`;
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
+        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
         
         let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [], currentPage = 'dashboard';
         
         // Dropdown collections from sheets
         let categories = [], subcategories = [], suppliers = [], locations = [], purchaseUnits = [], packUnits = [];
         let currentUserLocation = 'All Locations', userRoles = {}, currentUserRole = 'Staff', isOwner = 0; // User role for access control
+
+        function apiUrl(path) {
+            return `${API_BASE}${path}`;
+        }
+
+        async function parseApiResponse(res) {
+            const text = await res.text();
+
+            let data;
+            try {
+                data = text ? JSON.parse(text) : {};
+            } catch (e) {
+                data = { error: text || `Request failed (${res.status})` };
+            }
+
+            if (!res.ok && !data.error) {
+                data.error = `Request failed (${res.status})`;
+            }
+
+            return data;
+        }
+
+        function formatApiNetworkError(err) {
+            const msg = (err && err.message) ? err.message : 'Unknown network error';
+            if (msg.includes('Failed to fetch') || msg.includes('NetworkError')) {
+                if (window.location.protocol === 'file:') {
+                    return 'Cannot reach backend at http://localhost:3000. Start your server, then try again.';
+                }
+                return 'Cannot reach backend server. Please check the server is running and try again.';
+            }
+            return msg;
+        }
         
         function extractDropdownOptions() {
             // Extract unique values from inventory for dropdowns
@@ -2503,12 +2536,12 @@
             errorDiv.style.display = 'none';
             
             // Call backend API
-            fetch('/api/login', {
+            fetch(apiUrl('/api/login'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
             })
-            .then(res => res.json())
+            .then(parseApiResponse)
             .then(data => {
                 if (data.error) {
                     errorDiv.textContent = data.error;
@@ -2535,14 +2568,14 @@
                 checkAuth();
             })
             .catch(err => {
-                errorDiv.textContent = 'Login failed: ' + err.message;
+                errorDiv.textContent = 'Login failed: ' + formatApiNetworkError(err);
                 errorDiv.style.display = 'block';
             });
         }
         
         // Show device trust modal
         function showDeviceTrustModal() {
-            document.getElementById('deviceTrustModal').style.display = 'flex';
+            document.getElementById('deviceTrustModal').style.display = 'block';
         }
         
         // Handle device trust
@@ -2585,12 +2618,12 @@
             }
             
             // Call backend API
-            fetch('/api/register', {
+            fetch(apiUrl('/api/register'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password, fullName })
             })
-            .then(res => res.json())
+            .then(parseApiResponse)
             .then(data => {
                 if (data.error) {
                     errorDiv.textContent = data.error;
@@ -2611,7 +2644,7 @@
                 }, 300);
             })
             .catch(err => {
-                errorDiv.textContent = 'Registration failed: ' + err.message;
+                errorDiv.textContent = 'Registration failed: ' + formatApiNetworkError(err);
                 errorDiv.style.display = 'block';
             });
         }
@@ -2692,7 +2725,7 @@
         }
         
         // Role-based access control
-        function isOwner() {
+        function isCurrentUserOwner() {
             return isOwner === 1 || localStorage.getItem('isOwner') === '1';
         }
         
@@ -2792,7 +2825,7 @@
         
         // Sync admin role to backend database
         function syncAdminToBackend(email, isAdmin) {
-            fetch('/api/setup-admin', {
+            fetch(apiUrl('/api/setup-admin'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -2800,7 +2833,7 @@
                     setupKey: 'ADMIN_SETUP_2024' 
                 })
             })
-            .then(res => res.json())
+            .then(parseApiResponse)
             .then(data => {
                 if (data.success) {
                     console.log('✅ Admin synced to backend:', email);
@@ -3027,13 +3060,6 @@
         function showSetPasswordModal() {
             document.getElementById('setPasswordModal').style.display = 'block';
             document.getElementById('modalBackdrop').style.display = 'block';
-        }
-        
-        function closeModal(modalId) {
-            document.getElementById(modalId).style.display = 'none';
-            if (!document.getElementById('changeEmailModal').style.display !== 'none' && !document.getElementById('changePasswordModal').style.display !== 'none') {
-                document.getElementById('modalBackdrop').style.display = 'none';
-            }
         }
         
         function closeAllModals() {
@@ -3624,45 +3650,65 @@
         }
         
         function updateExpiryMetrics() {
-            console.log('[DEBUG] updateExpiryMetrics called, expiryDates:', expiryDates);
-            
-            // Get all items with expiry dates
-            const itemsWithExpiry = (expiryDates || []).filter(item => {
-                const expiryDate = item.expiryDate || item['Expiry Date'] || '';
-                return expiryDate && expiryDate.trim() !== '';
-            });
-            
-            console.log('[DEBUG] itemsWithExpiry:', itemsWithExpiry);
-
-            // Separate by expiry status
-            const expired = [];
-            const today = [];
-            const sevenDays = [];
-            const thirtyDays = [];
-
-            itemsWithExpiry.forEach(item => {
-                const expiryDate = item.expiryDate || item['Expiry Date'] || '';
-                const daysUntil = calculateDaysUntilExpiry(expiryDate);
-                console.log('[DEBUG] Item:', item.item, 'Expiry:', expiryDate, 'DaysUntil:', daysUntil);
+            try {
+                console.log('[DEBUG] updateExpiryMetrics called, expiryDates:', expiryDates);
                 
-                if (daysUntil < 0) {
-                    expired.push(item);
-                } else if (daysUntil === 0) {
-                    today.push(item);
-                } else if (daysUntil > 0 && daysUntil <= 7) {
-                    sevenDays.push(item);
-                } else if (daysUntil > 7 && daysUntil <= 30) {
-                    thirtyDays.push(item);
+                // Get all items with expiry dates
+                const itemsWithExpiry = (expiryDates || []).filter(item => {
+                    const rawExpiryDate = item?.expiryDate ?? item?.['Expiry Date'] ?? '';
+                    const expiryDate = String(rawExpiryDate).trim();
+                    return expiryDate !== '';
+                });
+                
+                console.log('[DEBUG] itemsWithExpiry:', itemsWithExpiry);
+
+                // Separate by expiry status
+                const expired = [];
+                const today = [];
+                const sevenDays = [];
+                const thirtyDays = [];
+
+                itemsWithExpiry.forEach(item => {
+                    const rawExpiryDate = item?.expiryDate ?? item?.['Expiry Date'] ?? '';
+                    const expiryDate = String(rawExpiryDate).trim();
+                    const daysUntil = calculateDaysUntilExpiry(expiryDate);
+                    console.log('[DEBUG] Item:', item.item, 'Expiry:', expiryDate, 'DaysUntil:', daysUntil);
+
+                    if (daysUntil === null) {
+                        return;
+                    }
+                    
+                    if (daysUntil < 0) {
+                        expired.push(item);
+                    } else if (daysUntil === 0) {
+                        today.push(item);
+                    } else if (daysUntil > 0 && daysUntil <= 7) {
+                        sevenDays.push(item);
+                    } else if (daysUntil > 7 && daysUntil <= 30) {
+                        thirtyDays.push(item);
+                    }
+                });
+
+                console.log('[DEBUG] Expired:', expired.length, 'Today:', today.length, 'SevenDays:', sevenDays.length, 'ThirtyDays:', thirtyDays.length);
+
+                // Update expiry alert widget
+                updateExpiryAlertWidget(expired, today, sevenDays, thirtyDays);
+                
+                // Update expired items widget
+                updateExpiredItemsWidget(expired, today);
+            } catch (error) {
+                console.error('updateExpiryMetrics failed:', error);
+
+                const expiryAlert = document.getElementById('expiriesContent');
+                if (expiryAlert) {
+                    expiryAlert.innerHTML = '<div style="padding:12px 0;color:var(--muted);font-size:13px;">No expiry data from spreadsheet yet</div>';
                 }
-            });
 
-            console.log('[DEBUG] Expired:', expired.length, 'Today:', today.length, 'SevenDays:', sevenDays.length, 'ThirtyDays:', thirtyDays.length);
-
-            // Update expiry alert widget
-            updateExpiryAlertWidget(expired, today, sevenDays, thirtyDays);
-            
-            // Update expired items widget
-            updateExpiredItemsWidget(expired, today);
+                const expiredWidget = document.getElementById('expiredItemsWidget');
+                if (expiredWidget) {
+                    expiredWidget.innerHTML = '<div style="padding:12px 0;text-align:center;color:var(--muted);font-size:13px;">No expiry data from spreadsheet yet</div>';
+                }
+            }
         }
 
         function updateExpiryAlertWidget(expired, today, sevenDays, thirtyDays) {
@@ -3769,7 +3815,18 @@
         function closeModal(modalId) {
             const modal = document.getElementById(modalId);
             if (modal) {
+                modal.style.display = 'none';
                 modal.classList.remove('show');
+            }
+
+            const backdrop = document.getElementById('modalBackdrop');
+            if (backdrop) {
+                const emailOpen = document.getElementById('changeEmailModal')?.style.display !== 'none';
+                const passwordOpen = document.getElementById('changePasswordModal')?.style.display !== 'none';
+                const setPasswordOpen = document.getElementById('setPasswordModal')?.style.display !== 'none';
+                if (!emailOpen && !passwordOpen && !setPasswordOpen) {
+                    backdrop.style.display = 'none';
+                }
             }
         }
         
@@ -4277,16 +4334,34 @@
         }
         
         function calculateDaysUntilExpiry(expiryDate) {
-            if (!expiryDate) return 0;
-            const expDate = new Date(expiryDate);
+            if (!expiryDate) return null;
+
+            const raw = String(expiryDate).trim();
+            let expDate;
+
+            // Parse YYYY-MM-DD as local date to avoid UTC timezone shifts.
+            const ymdMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+            if (ymdMatch) {
+                const year = Number(ymdMatch[1]);
+                const month = Number(ymdMatch[2]) - 1;
+                const day = Number(ymdMatch[3]);
+                expDate = new Date(year, month, day);
+            } else {
+                expDate = new Date(raw);
+            }
+
+            if (Number.isNaN(expDate.getTime())) return null;
+
             const today = new Date();
             today.setHours(0, 0, 0, 0);
+            expDate.setHours(0, 0, 0, 0);
             const diffTime = expDate - today;
-            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-            return diffDays >= 0 ? diffDays : -Math.abs(diffDays);
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            return diffDays;
         }
         
         function getExpiryStatus(daysUntilExpiry) {
+            if (daysUntilExpiry === null) return 'Invalid';
             if (daysUntilExpiry < 0) return 'Expired';
             if (daysUntilExpiry === 0) return 'Today';
             if (daysUntilExpiry <= 3) return 'Critical';
@@ -4301,8 +4376,8 @@
                 const expiryDate = e.expiryDate || e['Expiry Date'] || '';
                 const daysUntil = calculateDaysUntilExpiry(expiryDate);
                 const status = getExpiryStatus(daysUntil);
-                const statusColor = status === 'Expired' ? '#ff4444' : status === 'Today' ? '#ff6600' : status === 'Critical' ? '#ff2200' : status === 'Warning' ? '#ff8800' : status === 'Caution' ? '#ffbb00' : '#44bb44';
-                const displayDays = daysUntil < 0 ? `<strong style="color:#ff4444;">-${Math.abs(daysUntil)} days (EXPIRED)</strong>` : `<strong>${daysUntil} days</strong>`;
+                const statusColor = status === 'Expired' ? '#ff4444' : status === 'Today' ? '#ff6600' : status === 'Critical' ? '#ff2200' : status === 'Warning' ? '#ff8800' : status === 'Caution' ? '#ffbb00' : status === 'Invalid' ? '#6c757d' : '#44bb44';
+                const displayDays = daysUntil === null ? '<strong style="color:#6c757d;">Invalid date</strong>' : daysUntil < 0 ? `<strong style="color:#ff4444;">-${Math.abs(daysUntil)} days (EXPIRED)</strong>` : `<strong>${daysUntil} days</strong>`;
                 
                 return `
                 <tr>
