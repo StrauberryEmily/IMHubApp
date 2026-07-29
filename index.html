@@ -3324,6 +3324,9 @@
             // Update time and greeting
             updateTimeAndGreeting();
             
+            // Initialize expiry widget immediately with test data (will be replaced when real data loads)
+            initializeExpiryWidget();
+            
             // Load all data
             loadAllData();
             loadTheme();
@@ -3346,6 +3349,18 @@
                 if (currentPage === 'expiry') renderExpiryTable();
                 updateExpiryMetrics();
             }, 60000);
+        }
+        
+        // Initialize expiry widget immediately with test data
+        function initializeExpiryWidget() {
+            console.log('[DEBUG] Initializing expiry widget');
+            expiryDates = [
+                {item: 'Milk', location: 'Fridge', quantity: '2L', expiryDate: '2026-07-31'},
+                {item: 'Bread', location: 'Lounge', quantity: '3', expiryDate: '2026-07-29'},
+                {item: 'Yogurt', location: 'Main', quantity: '5', expiryDate: '2026-08-02'},
+                {item: 'Cheese', location: 'Fridge', quantity: '500g', expiryDate: '2026-07-25'}
+            ];
+            updateExpiryMetrics();
         }
         
         // Sync changes back to Google Sheets via Apps Script
@@ -3633,11 +3648,15 @@
         }
         
         function updateExpiryMetrics() {
+            console.log('[DEBUG] updateExpiryMetrics called, expiryDates:', expiryDates);
+            
             // Get all items with expiry dates
             const itemsWithExpiry = (expiryDates || []).filter(item => {
                 const expiryDate = item.expiryDate || item['Expiry Date'] || '';
                 return expiryDate && expiryDate.trim() !== '';
             });
+            
+            console.log('[DEBUG] itemsWithExpiry:', itemsWithExpiry);
 
             // Separate by expiry status
             const expired = [];
@@ -3648,6 +3667,7 @@
             itemsWithExpiry.forEach(item => {
                 const expiryDate = item.expiryDate || item['Expiry Date'] || '';
                 const daysUntil = calculateDaysUntilExpiry(expiryDate);
+                console.log('[DEBUG] Item:', item.item, 'Expiry:', expiryDate, 'DaysUntil:', daysUntil);
                 
                 if (daysUntil < 0) {
                     expired.push(item);
@@ -3659,6 +3679,8 @@
                     thirtyDays.push(item);
                 }
             });
+
+            console.log('[DEBUG] Expired:', expired.length, 'Today:', today.length, 'SevenDays:', sevenDays.length, 'ThirtyDays:', thirtyDays.length);
 
             // Update expiry alert widget
             updateExpiryAlertWidget(expired, today, sevenDays, thirtyDays);
