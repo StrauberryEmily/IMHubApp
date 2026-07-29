@@ -2246,6 +2246,32 @@
                         </div>
                         
                         <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">
+                            <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">📧 Account Approvals (Owner Only)</h3>
+                            <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">Only approved emails can register new accounts.</p>
+                            <div style="display:grid;grid-template-columns:1fr auto;gap:10px;margin-bottom:10px;">
+                                <input type="email" id="approvedEmailInput" placeholder="Email to approve" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
+                                <button onclick="approveSignupEmail()" style="padding:10px 14px;background:#2e7d32;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Approve</button>
+                            </div>
+                            <div style="margin-bottom:10px;">
+                                <button onclick="loadApprovedEmails(true)" style="padding:8px 12px;background:white;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;">Refresh Approved Emails</button>
+                            </div>
+                            <div id="approvedEmailsList" style="display:grid;gap:8px;max-height:220px;overflow:auto;padding:8px;border:1px dashed var(--border);border-radius:6px;background:#fafafa;">
+                                <div style="text-align:center;color:var(--muted);padding:8px;">Owner can load approved emails list.</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">
+                            <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">📝 Signup Requests</h3>
+                            <p style="font-size:12px;color:var(--muted);margin-bottom:10px;">See blocked account creation attempts and approve or deny each email.</p>
+                            <div style="margin-bottom:10px;">
+                                <button onclick="loadSignupAttempts(true)" style="padding:8px 12px;background:white;border:1px solid var(--border);border-radius:6px;cursor:pointer;font-weight:600;">Refresh Signup Requests</button>
+                            </div>
+                            <div id="signupAttemptsList" style="display:grid;gap:8px;max-height:280px;overflow:auto;padding:8px;border:1px dashed var(--border);border-radius:6px;background:#fafafa;">
+                                <div style="text-align:center;color:var(--muted);padding:8px;">Owner can load signup request history.</div>
+                            </div>
+                        </div>
+
+                        <div style="margin-top:20px;border-top:1px solid var(--border);padding-top:20px;">
                             <h3 style="font-size:14px;font-weight:600;margin-bottom:10px;">Team Members</h3>
                             <div id="teamMembersList" style="display:grid;gap:10px;">
                                 <div style="text-align:center;color:var(--muted);padding:20px;">Loading team members...</div>
@@ -2339,6 +2365,7 @@
         const WASTE_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=805306269`;
         const TASKS_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=322069325`;
         const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzLHDClCbwDE-Pk8nl-0me9mz1c1Y2lIH63Aqi4cFhLqGsuBh1wa7CNpug5MYle6TnC/exec';
+        const OWNER_EMAIL = 'emilyjreed01@gmail.com';
         const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
         
         let inventory = [], deliveries = [], expiryDates = [], movements = [], waste = [], tasks = [], activities = [], currentPage = 'dashboard';
@@ -2643,6 +2670,9 @@
                 localStorage.setItem('currentUser', data.email);
                 localStorage.setItem('currentUserName', data.fullName || fullName);
                 localStorage.setItem('currentUserJobTitle', 'Staff');
+                localStorage.setItem('userRole', data.role || 'Staff');
+                localStorage.setItem('isOwner', String(data.isOwner || 0));
+                localStorage.setItem('isPrimaryAdmin', String(data.isPrimaryAdmin || 0));
                 localStorage.setItem('recoveryCode', data.recoveryCode);
                 sessionStorage.setItem('imhAuthenticated', '1');
                 sessionStorage.setItem('imhSessionUser', data.email);
@@ -2726,6 +2756,7 @@
         function handleLogout() {
             localStorage.removeItem('currentUser');
             localStorage.removeItem('currentUserRole');
+            localStorage.removeItem('userRole');
             localStorage.removeItem('currentUserName');
             localStorage.removeItem('currentUserJobTitle');
             localStorage.removeItem('currentUserLocation');
@@ -2831,14 +2862,312 @@
         function updateRolesDisplay() {
             const email = localStorage.getItem('currentUser');
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
-            const userRoles = allUsers[email]?.roles || ['Staff'];
+            const currentRole = localStorage.getItem('userRole') || 'Staff';
+            const userRoles = allUsers[email]?.roles || [currentRole];
             document.getElementById('rolesText').textContent = userRoles.join(', ');
+        }
+
+        let ownerAuthCache = null;
+
+        function getOwnerAuthPayload(promptText = 'Enter owner password to continue:', forcePrompt = false) {
+            if (!isCurrentUserOwner()) {
+                alert('❌ Only OWNER can manage account approvals.');
+                return null;
+            }
+
+            const requesterEmail = (localStorage.getItem('currentUser') || '').toLowerCase().trim();
+            if (!forcePrompt && ownerAuthCache && ownerAuthCache.requesterEmail === requesterEmail && (Date.now() - ownerAuthCache.ts) < 5 * 60 * 1000) {
+                return { requesterEmail, requesterPassword: ownerAuthCache.requesterPassword };
+            }
+
+            const requesterPassword = prompt(promptText);
+            if (!requesterPassword) return null;
+
+            ownerAuthCache = {
+                requesterEmail,
+                requesterPassword,
+                ts: Date.now()
+            };
+
+            return { requesterEmail, requesterPassword };
+        }
+
+        function renderApprovedEmailsList(approvals) {
+            const container = document.getElementById('approvedEmailsList');
+            if (!container) return;
+
+            if (!approvals || approvals.length === 0) {
+                container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:8px;">No approved emails yet</div>';
+                return;
+            }
+
+            container.innerHTML = approvals.map(entry => {
+                const email = entry.email || '';
+                const approvedBy = entry.approvedBy || 'owner';
+                const createdAt = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : 'Unknown date';
+                const removable = email.toLowerCase() !== OWNER_EMAIL;
+
+                return `
+                    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;background:white;border:1px solid var(--border);border-radius:6px;gap:8px;">
+                        <div style="min-width:0;">
+                            <div style="font-weight:600;word-break:break-word;">${email}</div>
+                            <div style="font-size:11px;color:var(--muted);">Approved by ${approvedBy} • ${createdAt}</div>
+                        </div>
+                        <button onclick="revokeSignupEmail('${email}')" ${removable ? '' : 'disabled'} style="padding:6px 10px;background:${removable ? '#ff4444' : '#ccc'};color:white;border:none;border-radius:4px;cursor:${removable ? 'pointer' : 'not-allowed'};font-size:12px;">Remove</button>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function loadApprovedEmails(showMessages = false) {
+            const auth = getOwnerAuthPayload('Owner password required to load approved emails:');
+            if (!auth) return;
+
+            fetch(apiUrl('/api/approvals/list'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(auth)
+            })
+            .then(parseApiResponse)
+            .then(data => {
+                if (data.error) {
+                    if (showMessages) alert(`❌ ${data.error}`);
+                    return;
+                }
+
+                renderApprovedEmailsList(data.approvals || []);
+                if (showMessages) alert('✅ Approved emails loaded');
+            })
+            .catch(err => {
+                if (showMessages) alert('❌ Failed to load approved emails: ' + formatApiNetworkError(err));
+            });
+        }
+
+        function renderSignupAttemptsList(attempts) {
+            const container = document.getElementById('signupAttemptsList');
+            if (!container) return;
+
+            if (!attempts || attempts.length === 0) {
+                container.innerHTML = '<div style="text-align:center;color:var(--muted);padding:8px;">No signup requests yet</div>';
+                return;
+            }
+
+            container.innerHTML = attempts.map(attempt => {
+                const email = (attempt.email || '').toLowerCase();
+                const encodedEmail = encodeURIComponent(email);
+                const name = attempt.fullName || 'Unknown name';
+                const count = attempt.attemptCount || 1;
+                const status = attempt.status || 'pending';
+                const lastError = attempt.lastError || '';
+                const lastAt = attempt.lastAttemptAt ? new Date(attempt.lastAttemptAt).toLocaleString() : 'Unknown time';
+
+                const statusColor = status === 'approved' ? '#2e7d32' : status === 'denied' ? '#c62828' : status === 'registered' ? '#1565c0' : '#ef6c00';
+
+                return `
+                    <div style="padding:10px;background:white;border:1px solid var(--border);border-radius:6px;display:grid;gap:8px;">
+                        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+                            <div style="min-width:0;">
+                                <div style="font-weight:700;word-break:break-word;">${email}</div>
+                                <div style="font-size:12px;color:var(--muted);">${name}</div>
+                            </div>
+                            <span style="background:${statusColor};color:white;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;text-transform:uppercase;">${status}</span>
+                        </div>
+                        <div style="font-size:12px;color:var(--muted);">Attempts: ${count} • Last try: ${lastAt}</div>
+                        ${lastError ? `<div style="font-size:12px;color:#c62828;">${lastError}</div>` : ''}
+                        <div style="display:flex;gap:8px;">
+                            <button data-attempt-action="approve" data-attempt-email="${encodedEmail}" style="padding:6px 10px;background:#2e7d32;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Approve</button>
+                            <button data-attempt-action="deny" data-attempt-email="${encodedEmail}" style="padding:6px 10px;background:#c62828;color:white;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Deny</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            bindSignupAttemptActions(container);
+        }
+
+        function bindSignupAttemptActions(container) {
+            if (!container) return;
+
+            container.querySelectorAll('button[data-attempt-action][data-attempt-email]').forEach(button => {
+                button.addEventListener('click', async () => {
+                    const action = button.getAttribute('data-attempt-action');
+                    const encodedEmail = button.getAttribute('data-attempt-email') || '';
+                    const targetEmail = decodeURIComponent(encodedEmail || '').toLowerCase().trim();
+
+                    if (!targetEmail || (action !== 'approve' && action !== 'deny')) {
+                        alert('❌ Invalid signup request action. Please refresh and try again.');
+                        return;
+                    }
+
+                    const originalText = button.textContent;
+                    button.disabled = true;
+                    button.style.opacity = '0.7';
+                    button.style.cursor = 'not-allowed';
+                    button.textContent = action === 'approve' ? 'Approving...' : 'Denying...';
+
+                    try {
+                        if (action === 'approve') {
+                            await approveSignupAttempt(targetEmail);
+                        } else {
+                            await denySignupAttempt(targetEmail);
+                        }
+                    } finally {
+                        button.disabled = false;
+                        button.style.opacity = '1';
+                        button.style.cursor = 'pointer';
+                        button.textContent = originalText;
+                    }
+                });
+            });
+        }
+
+        function loadSignupAttempts(showMessages = false) {
+            const auth = getOwnerAuthPayload('Owner password required to load signup requests:');
+            if (!auth) return;
+
+            fetch(apiUrl('/api/approvals/attempts'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(auth)
+            })
+            .then(parseApiResponse)
+            .then(data => {
+                if (data.error) {
+                    if (showMessages) alert(`❌ ${data.error}`);
+                    return;
+                }
+
+                renderSignupAttemptsList(data.attempts || []);
+                if (showMessages) alert('✅ Signup requests loaded');
+            })
+            .catch(err => {
+                if (showMessages) alert('❌ Failed to load signup requests: ' + formatApiNetworkError(err));
+            });
+        }
+
+        async function approveSignupAttempt(email) {
+            const targetEmail = (email || '').toLowerCase().trim();
+            if (!targetEmail) return false;
+
+            const auth = getOwnerAuthPayload(`Owner password required to approve signup request for ${targetEmail}:`);
+            if (!auth) return false;
+
+            try {
+                const res = await fetch(apiUrl('/api/approvals/attempts/approve'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...auth, email: targetEmail })
+                });
+                const data = await parseApiResponse(res);
+
+                if (data.error) {
+                    alert(`❌ ${data.error}`);
+                    return false;
+                }
+
+                alert(`✅ Approved ${targetEmail}. They can now register.`);
+                loadApprovedEmails(false);
+                loadSignupAttempts(false);
+                return true;
+            } catch (err) {
+                alert('❌ Failed to approve signup request: ' + formatApiNetworkError(err));
+                return false;
+            }
+        }
+
+        async function denySignupAttempt(email) {
+            const targetEmail = (email || '').toLowerCase().trim();
+            if (!targetEmail) return false;
+
+            const reason = prompt('Optional deny reason:', 'Denied by owner') || 'Denied by owner';
+            const auth = getOwnerAuthPayload(`Owner password required to deny signup request for ${targetEmail}:`);
+            if (!auth) return false;
+
+            try {
+                const res = await fetch(apiUrl('/api/approvals/attempts/deny'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...auth, email: targetEmail, reason })
+                });
+                const data = await parseApiResponse(res);
+
+                if (data.error) {
+                    alert(`❌ ${data.error}`);
+                    return false;
+                }
+
+                alert(`✅ Denied ${targetEmail}.`);
+                loadApprovedEmails(false);
+                loadSignupAttempts(false);
+                return true;
+            } catch (err) {
+                alert('❌ Failed to deny signup request: ' + formatApiNetworkError(err));
+                return false;
+            }
+        }
+
+        function approveSignupEmail() {
+            const email = (document.getElementById('approvedEmailInput')?.value || '').toLowerCase().trim();
+            if (!email) {
+                alert('⚠️ Enter an email to approve.');
+                return;
+            }
+
+            const auth = getOwnerAuthPayload(`Owner password required to approve ${email}:`);
+            if (!auth) return;
+
+            fetch(apiUrl('/api/approvals/add'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...auth, email })
+            })
+            .then(parseApiResponse)
+            .then(data => {
+                if (data.error) {
+                    alert(`❌ ${data.error}`);
+                    return;
+                }
+
+                alert(`✅ ${email} is now approved for account creation.`);
+                document.getElementById('approvedEmailInput').value = '';
+                loadApprovedEmails(false);
+                loadSignupAttempts(false);
+            })
+            .catch(err => {
+                alert('❌ Failed to approve email: ' + formatApiNetworkError(err));
+            });
+        }
+
+        function revokeSignupEmail(email) {
+            const targetEmail = (email || '').toLowerCase().trim();
+            if (!targetEmail) return;
+
+            const auth = getOwnerAuthPayload(`Owner password required to remove approval for ${targetEmail}:`);
+            if (!auth) return;
+
+            fetch(apiUrl('/api/approvals/remove'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...auth, email: targetEmail })
+            })
+            .then(parseApiResponse)
+            .then(data => {
+                if (data.error) {
+                    alert(`❌ ${data.error}`);
+                    return;
+                }
+
+                alert(`✅ Removed approval for ${targetEmail}.`);
+                loadApprovedEmails(false);
+                loadSignupAttempts(false);
+            })
+            .catch(err => {
+                alert('❌ Failed to remove approval: ' + formatApiNetworkError(err));
+            });
         }
         
         // Sync admin role to backend database with owner confirmation.
-        function syncAdminToBackend(email, isAdmin) {
-            if (!isAdmin) return;
-
+        function syncAdminToBackend(email) {
             if (!isCurrentUserOwner()) {
                 alert('❌ Only the OWNER account can grant Admin access.');
                 return;
@@ -2910,7 +3239,7 @@
             
             // If Admin role, sync to backend
             if (role === 'Admin') {
-                syncAdminToBackend(email, true);
+                syncAdminToBackend(email);
             }
             
             // Clear inputs
@@ -2978,7 +3307,7 @@
                 
                 // If changed to Admin, sync to backend
                 if (newRole === 'Admin') {
-                    syncAdminToBackend(email, true);
+                    syncAdminToBackend(email);
                 }
                 
                 loadTeamMembers();
@@ -2993,12 +3322,47 @@
                 alert('👑 Cannot delete OWNER account.\n\nThis account is the system owner and is permanently protected.');
                 return;
             }
+
+            if (!isCurrentUserOwner()) {
+                alert('❌ Only OWNER can fully remove an account from the system.');
+                return;
+            }
             
             if (confirm(`Delete ${email} from team?`)) {
-                const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
-                delete allUsers[email];
-                localStorage.setItem('allUsers', JSON.stringify(allUsers));
-                loadTeamMembers();
+                const requesterEmail = (localStorage.getItem('currentUser') || '').toLowerCase().trim();
+                const requesterPassword = prompt(`Owner password required to remove ${email} from system:`);
+                if (!requesterPassword) {
+                    alert('Account removal cancelled.');
+                    return;
+                }
+
+                fetch(apiUrl('/api/team/remove'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        requesterEmail,
+                        requesterPassword,
+                        targetEmail: email.toLowerCase().trim()
+                    })
+                })
+                .then(parseApiResponse)
+                .then(data => {
+                    if (data.error) {
+                        alert(`❌ Failed to remove account: ${data.error}`);
+                        return;
+                    }
+
+                    const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
+                    delete allUsers[email];
+                    localStorage.setItem('allUsers', JSON.stringify(allUsers));
+                    loadTeamMembers();
+                    loadApprovedEmails(false);
+                    loadSignupAttempts(false);
+                    alert(`✅ ${email} removed. They can no longer log in.`);
+                })
+                .catch(err => {
+                    alert('❌ Failed to remove account: ' + formatApiNetworkError(err));
+                });
             }
         }
         
@@ -3380,12 +3744,18 @@
             const users = JSON.parse(localStorage.getItem('imhUsers') || '{}');
             const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
             const user = users[userEmail] || allUsers[userEmail];
+            const normalizedUserEmail = (userEmail || '').toLowerCase();
+            const isDesignatedOwner = normalizedUserEmail === OWNER_EMAIL;
             
             // Priority: 1) stored role from login response, 2) user object role, 3) default Staff
-            currentUserRole = storedRole || user?.role || 'Staff';
-            isOwner = storedIsOwner ? parseInt(storedIsOwner) : 0;
+            currentUserRole = isDesignatedOwner ? 'Owner' : (storedRole || user?.role || 'Staff');
+            isOwner = isDesignatedOwner ? 1 : (storedIsOwner ? parseInt(storedIsOwner, 10) : 0);
             localStorage.setItem('userRole', currentUserRole);
             localStorage.setItem('isOwner', isOwner);
+            localStorage.setItem('isPrimaryAdmin', isOwner ? '1' : (localStorage.getItem('isPrimaryAdmin') || '0'));
+            // Show effective role in both profile labels.
+            document.getElementById('sidebarJobTitle').textContent = currentUserRole;
+            document.querySelector('.user-role').textContent = currentUserRole;
             if (user) {
                 document.getElementById('recoveryCodeDisplay').textContent = user.recoveryCode;
             }
@@ -3403,7 +3773,7 @@
             
             // Initialize settings
             currentUserLocation = localStorage.getItem('currentUserLocation') || 'All Locations';
-            currentUserRole = localStorage.getItem('userRole') || 'Staff';
+            currentUserRole = isDesignatedOwner ? 'Owner' : (localStorage.getItem('userRole') || 'Staff');
             populateLocationSelects();
             loadTeamMembers();
             document.getElementById('settingName').value = userName;
@@ -3431,26 +3801,27 @@
         async function syncToSheet(itemId, field, value, type = 'inventory') {
             if (!APPS_SCRIPT_URL) {
                 console.warn('Apps Script not configured yet. Change will be saved locally.');
-                return;
+                return false;
             }
             
             try {
-                const response = await fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    mode: 'no-cors',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        action: 'updateCell',
-                        type: type,
-                        itemId: itemId,
-                        field: field,
-                        value: value
-                    })
+                const synced = await sendToAppsScript('updateCell', {
+                    type: type,
+                    itemId: itemId,
+                    field: mapSheetFieldName(type, field),
+                    value: value
                 });
-                
+
+                if (!synced) {
+                    console.warn(`Failed to sync ${field} to sheet`);
+                    return false;
+                }
+
                 console.log(`✓ Synced ${field} to sheet`);
+                return true;
             } catch (e) {
                 console.error('Sync error:', e);
+                return false;
             }
         }
         
@@ -3458,9 +3829,9 @@
             await loadInventoryData();
             await loadDeliveriesData();
             await loadExpiryData();
-            loadMovementsData();
-            loadWasteData();
-            loadTasks();
+            await loadMovementsData();
+            await loadWasteData();
+            await loadTasks();
             loadActivities();
             updateDashboard();
             loadProfileImage();
@@ -3484,33 +3855,143 @@
             try {
                 const response = await fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ action, ...data })
                 });
-                const result = await response.json();
-                return result.success;
+
+                if (!response.ok) {
+                    return false;
+                }
+
+                const text = await response.text();
+                if (!text) {
+                    return true;
+                }
+
+                try {
+                    const result = JSON.parse(text);
+                    return result.success !== false;
+                } catch (e) {
+                    // Some Apps Script endpoints return plain text on success.
+                    return true;
+                }
             } catch (error) {
                 console.error('Error sending to Apps Script:', error);
                 return false;
             }
         }
         
-        function loadMovementsData() {
+        function mapSheetFieldName(type, field) {
+            const fieldMap = {
+                inventory: {
+                    name: 'Item name',
+                    category: 'Category',
+                    subcategory: 'Subcategory',
+                    purchaseUnit: 'Purchase Unit',
+                    packQty: 'Pack Qty',
+                    packUnit: 'Pack Unit',
+                    supplier: 'Supplier',
+                    location: 'Default Storage Location',
+                    trackExpiry: 'Track Expiry',
+                    totalStock: 'Total Stock',
+                    minStock: 'Minimun Stock',
+                    idealStock: 'Ideal Stock',
+                    reorderPoint: 'Reorder Point',
+                    trackWaste: 'Track Waste',
+                    active: 'Active',
+                    notes: 'Notes'
+                },
+                deliveries: {
+                    dateOrdered: 'Date Ordered',
+                    expectedDelivery: 'Expected Delivery',
+                    dateReceived: 'Date Received',
+                    supplier: 'Supplier',
+                    item: 'Item',
+                    quantity: 'Quantity',
+                    purchaseUnit: 'Purchase Unit',
+                    expiryDate: 'Expiry Date',
+                    onTime: 'On Time',
+                    notes: 'Notes'
+                },
+                expiry: {
+                    item: 'Item',
+                    category: 'Category',
+                    subcategory: 'Subcategory',
+                    location: 'Location',
+                    quantity: 'Quantity',
+                    purchaseUnit: 'Purchase Unit',
+                    expiryDate: 'Expiry Date',
+                    status: 'Status',
+                    daysUntilExpiry: 'Days until Expiry'
+                }
+            };
+
+            return fieldMap[type]?.[field] || field;
+        }
+
+        async function loadMovementsData() {
             try {
-                movements = JSON.parse(localStorage.getItem('movements') || '[]');
+                const response = await fetch(MOVEMENTS_URL);
+                const csvText = await response.text();
+
+                await new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            movements = results.data
+                                .filter(row => (row['Item'] || row['item'] || '').toString().trim())
+                                .map(row => ({
+                                    'Date': row['Date'] || row['date'] || '',
+                                    'Item': row['Item'] || row['item'] || '',
+                                    'Quantity': row['Quantity'] || row['quantity'] || '',
+                                    'From Location': row['From Location'] || row['From'] || row['from'] || '',
+                                    'To Location': row['To Location'] || row['To'] || row['to'] || '',
+                                    'Reason': row['Reason'] || row['reason'] || '',
+                                    'Notes': row['Notes'] || row['notes'] || ''
+                                }));
+                            resolve();
+                        }
+                    });
+                });
+
                 renderMovementTable();
             } catch (e) {
                 console.error('Error loading movements:', e);
-                movements = [];
+                movements = JSON.parse(localStorage.getItem('movements') || '[]');
+                renderMovementTable();
             }
         }
         
-        function loadWasteData() {
+        async function loadWasteData() {
             try {
-                waste = JSON.parse(localStorage.getItem('waste') || '[]');
+                const response = await fetch(WASTE_URL);
+                const csvText = await response.text();
+
+                await new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            waste = results.data
+                                .filter(row => (row['Item'] || row['item'] || '').toString().trim())
+                                .map(row => ({
+                                    'Date': row['Date'] || row['date'] || '',
+                                    'Item': row['Item'] || row['item'] || '',
+                                    'Quantity': row['Quantity'] || row['quantity'] || '',
+                                    'Reason': row['Reason'] || row['reason'] || '',
+                                    'Notes': row['Notes'] || row['notes'] || ''
+                                }));
+                            resolve();
+                        }
+                    });
+                });
+
                 renderWasteTable();
             } catch (e) {
                 console.error('Error loading waste:', e);
-                waste = [];
+                waste = JSON.parse(localStorage.getItem('waste') || '[]');
+                renderWasteTable();
             }
         }
         
@@ -3957,47 +4438,68 @@
             let item = null;
             if (type === 'inventory') {
                 item = inventory[idx];
-                item.name = document.getElementById('edit_name')?.value || item.name;
-                item.category = document.getElementById('edit_category')?.value || item.category;
-                item.subcategory = document.getElementById('edit_subcategory')?.value || item.subcategory;
-                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit;
-                item.packQty = document.getElementById('edit_packQty')?.value || item.packQty;
-                item.packUnit = document.getElementById('edit_packUnit')?.value || item.packUnit;
-                item.supplier = document.getElementById('edit_supplier')?.value || item.supplier;
-                item.location = document.getElementById('edit_location')?.value || item.location;
-                item.totalStock = document.getElementById('edit_totalStock')?.value || item.totalStock;
-                item.minStock = document.getElementById('edit_minStock')?.value || item.minStock;
-                item.idealStock = document.getElementById('edit_idealStock')?.value || item.idealStock;
-                item.reorderPoint = document.getElementById('edit_reorderPoint')?.value || item.reorderPoint;
-                item.trackExpiry = document.getElementById('edit_trackExpiry')?.value || item.trackExpiry;
-                item.trackWaste = document.getElementById('edit_trackWaste')?.value || item.trackWaste;
-                item.active = document.getElementById('edit_active')?.value || item.active;
-                item.notes = document.getElementById('edit_notes')?.value || item.notes;
+                const updated = {
+                    name: document.getElementById('edit_name')?.value || item.name,
+                    category: document.getElementById('edit_category')?.value || item.category,
+                    subcategory: document.getElementById('edit_subcategory')?.value || item.subcategory,
+                    purchaseUnit: document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit,
+                    packQty: document.getElementById('edit_packQty')?.value || item.packQty,
+                    packUnit: document.getElementById('edit_packUnit')?.value || item.packUnit,
+                    supplier: document.getElementById('edit_supplier')?.value || item.supplier,
+                    location: document.getElementById('edit_location')?.value || item.location,
+                    totalStock: document.getElementById('edit_totalStock')?.value || item.totalStock,
+                    minStock: document.getElementById('edit_minStock')?.value || item.minStock,
+                    idealStock: document.getElementById('edit_idealStock')?.value || item.idealStock,
+                    reorderPoint: document.getElementById('edit_reorderPoint')?.value || item.reorderPoint,
+                    trackExpiry: document.getElementById('edit_trackExpiry')?.value || item.trackExpiry,
+                    trackWaste: document.getElementById('edit_trackWaste')?.value || item.trackWaste,
+                    active: document.getElementById('edit_active')?.value || item.active,
+                    notes: document.getElementById('edit_notes')?.value || item.notes
+                };
+
+                Object.entries(updated).forEach(([key, value]) => {
+                    item[key] = value;
+                    syncToSheet(item.id, key, value, 'inventory');
+                });
                 localStorage.setItem('inventory', JSON.stringify(inventory));
                 renderTable();
             } else if (type === 'deliveries') {
                 item = deliveries[idx];
-                item.dateOrdered = document.getElementById('edit_dateOrdered')?.value || item.dateOrdered || item['Date Ordered'];
-                item.expectedDelivery = document.getElementById('edit_expectedDelivery')?.value || item.expectedDelivery || item['Expected Delivery'];
-                item.dateReceived = document.getElementById('edit_dateReceived')?.value || item.dateReceived || item['Date Received'];
-                item.supplier = document.getElementById('edit_supplier')?.value || item.supplier || item['Supplier'];
-                item.item = document.getElementById('edit_item')?.value || item.item || item['Item'];
-                item.quantity = document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'];
-                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'];
-                item.expiryDate = document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date'];
-                item.onTime = document.getElementById('edit_onTime')?.value || item.onTime || item['On Time'];
-                item.notes = document.getElementById('edit_notes')?.value || item.notes || item['Notes'];
+                const updated = {
+                    dateOrdered: document.getElementById('edit_dateOrdered')?.value || item.dateOrdered || item['Date Ordered'],
+                    expectedDelivery: document.getElementById('edit_expectedDelivery')?.value || item.expectedDelivery || item['Expected Delivery'],
+                    dateReceived: document.getElementById('edit_dateReceived')?.value || item.dateReceived || item['Date Received'],
+                    supplier: document.getElementById('edit_supplier')?.value || item.supplier || item['Supplier'],
+                    item: document.getElementById('edit_item')?.value || item.item || item['Item'],
+                    quantity: document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'],
+                    purchaseUnit: document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'],
+                    expiryDate: document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date'],
+                    onTime: document.getElementById('edit_onTime')?.value || item.onTime || item['On Time'],
+                    notes: document.getElementById('edit_notes')?.value || item.notes || item['Notes']
+                };
+
+                Object.entries(updated).forEach(([key, value]) => {
+                    item[key] = value;
+                    syncToSheet(idx + 1, key, value, 'deliveries');
+                });
                 localStorage.setItem('userDeliveries', JSON.stringify(deliveries.filter(d => !d['Date Ordered'])));
                 renderDeliveriesTable();
             } else if (type === 'expiry') {
                 item = expiryDates[idx];
-                item.item = document.getElementById('edit_item')?.value || item.item || item['Item'];
-                item.category = document.getElementById('edit_category')?.value || item.category || item['Category'];
-                item.subcategory = document.getElementById('edit_subcategory')?.value || item.subcategory || item['Subcategory'];
-                item.location = document.getElementById('edit_location')?.value || item.location || item['Location'];
-                item.quantity = document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'];
-                item.purchaseUnit = document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'];
-                item.expiryDate = document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date'];
+                const updated = {
+                    item: document.getElementById('edit_item')?.value || item.item || item['Item'],
+                    category: document.getElementById('edit_category')?.value || item.category || item['Category'],
+                    subcategory: document.getElementById('edit_subcategory')?.value || item.subcategory || item['Subcategory'],
+                    location: document.getElementById('edit_location')?.value || item.location || item['Location'],
+                    quantity: document.getElementById('edit_quantity')?.value || item.quantity || item['Quantity'],
+                    purchaseUnit: document.getElementById('edit_purchaseUnit')?.value || item.purchaseUnit || item['Purchase Unit'],
+                    expiryDate: document.getElementById('edit_expiryDate')?.value || item.expiryDate || item['Expiry Date']
+                };
+
+                Object.entries(updated).forEach(([key, value]) => {
+                    item[key] = value;
+                    syncToSheet(idx + 1, key, value, 'expiry');
+                });
                 localStorage.setItem('expiryDates', JSON.stringify(expiryDates.filter(e => e.item)));
                 renderExpiryTable();
             }
@@ -4217,6 +4719,18 @@
             if (!expiryDates) expiryDates = [];
             expiryDates.push(newExpiry);
             localStorage.setItem('expiryDates', JSON.stringify(expiryDates));
+
+            // Send to Google Sheets
+            sendToAppsScript('addExpiry', {
+                item: item,
+                location: location,
+                quantity: quantity,
+                purchaseUnit: purchaseUnit,
+                expiryDate: expiryDate,
+                status: status
+            }).then(success => {
+                if (success) console.log('Expiry entry synced to Google Sheets');
+            });
             
             alert('✅ Expiry date added successfully!');
             closeModal('addExpiryModal');
@@ -4516,10 +5030,13 @@
                     localOverrides[inventory[idx].id] = localOverrides[inventory[idx].id] || {};
                     localOverrides[inventory[idx].id][field] = nval;
                     localStorage.setItem('inventory_edits', JSON.stringify(localOverrides));
+                    syncToSheet(inventory[idx].id, field, nval, 'inventory');
                 } else if (type === 'deliveries') {
                     deliveries[idx][field] = nval;
+                    syncToSheet(idx + 1, field, nval, 'deliveries');
                 } else if (type === 'expiry') {
                     expiryDates[idx][field] = nval;
+                    syncToSheet(idx + 1, field, nval, 'expiry');
                 }
                 addActivity(`Updated ${field}`);
                 renderTable(); renderDeliveriesTable(); renderExpiryTable(); updateDashboard();
@@ -4535,6 +5052,15 @@
             if (!txt) return;
             tasks.push({id: Date.now(), text: txt, completed: false, timestamp: new Date().toISOString()});
             saveTasks(); input.value = ''; renderQuickTasks(); renderTasksList(); addActivity(`Task: ${txt}`);
+
+            // Send to Google Sheets
+            sendToAppsScript('addTask', {
+                text: txt,
+                completed: false,
+                priority: 'Normal'
+            }).then(success => {
+                if (success) console.log('Task synced to Google Sheets');
+            });
         }
         
         function completeTask(id) {
@@ -4554,7 +5080,42 @@
         }
         
         function saveTasks() { localStorage.setItem('inventory_tasks', JSON.stringify(tasks)); }
-        function loadTasks() { const s = localStorage.getItem('inventory_tasks'); tasks = s ? JSON.parse(s) : []; }
+        async function loadTasks() {
+            try {
+                const response = await fetch(TASKS_URL);
+                const csvText = await response.text();
+
+                await new Promise((resolve) => {
+                    Papa.parse(csvText, {
+                        header: true,
+                        skipEmptyLines: true,
+                        complete: (results) => {
+                            tasks = results.data
+                                .map((row, idx) => {
+                                    const text = (row['Task'] || row['Task Name'] || row['Title'] || row['Text'] || row['text'] || '').toString().trim();
+                                    const completedRaw = (row['Completed'] || row['Status'] || '').toString().toLowerCase();
+                                    const completed = ['true', 'yes', 'done', 'completed'].includes(completedRaw);
+                                    const timestamp = row['Timestamp'] || row['Date'] || new Date().toISOString();
+                                    return {
+                                        id: Date.now() + idx,
+                                        text,
+                                        completed,
+                                        timestamp
+                                    };
+                                })
+                                .filter(task => task.text);
+                            resolve();
+                        }
+                    });
+                });
+
+                saveTasks();
+            } catch (e) {
+                console.error('Error loading tasks:', e);
+                const s = localStorage.getItem('inventory_tasks');
+                tasks = s ? JSON.parse(s) : [];
+            }
+        }
         
         function addActivity(action) {
             activities.unshift({id: Date.now(), action, timestamp: new Date()});

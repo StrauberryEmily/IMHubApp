@@ -123,6 +123,7 @@ function validatePassword(password) {
 // ============= DATABASE INITIALIZATION =============
 // Use DB_PATH for persistent storage on platforms like Railway volumes.
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'users.db');
+const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'emilyjreed01@gmail.com').toLowerCase();
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ Database connection error:', err);
@@ -146,6 +147,55 @@ db.run(`
     );
 `, (err) => {
     if (err) console.error('Table creation error:', err);
+
+    // Ensure the designated owner email is always tagged as Owner.
+    db.run(
+        'UPDATE users SET role = ?, isPrimaryAdmin = 1, isOwner = 1 WHERE lower(email) = ?',
+        ['Owner', OWNER_EMAIL],
+        (ownerErr) => {
+            if (ownerErr) {
+                console.error('Owner bootstrap error:', ownerErr);
+            }
+        }
+    );
+
+});
+
+// Create approved emails table for controlled registration.
+db.run(`
+    CREATE TABLE IF NOT EXISTS approved_emails (
+        email TEXT PRIMARY KEY,
+        approvedBy TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+`, (err) => {
+    if (err) console.error('Approved emails table error:', err);
+
+    // Ensure owner email is always allowed to register.
+    db.run(
+        'INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)',
+        [OWNER_EMAIL, OWNER_EMAIL],
+        (seedErr) => {
+            if (seedErr) console.error('Approved emails seed error:', seedErr);
+        }
+    );
+});
+
+// Create signup attempts table for owner review queue.
+db.run(`
+    CREATE TABLE IF NOT EXISTS signup_attempts (
+        email TEXT PRIMARY KEY,
+        fullName TEXT,
+        attemptCount INTEGER DEFAULT 1,
+        firstAttemptAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        lastAttemptAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+        status TEXT DEFAULT 'pending',
+        lastError TEXT DEFAULT '',
+        reviewedBy TEXT,
+        reviewedAt DATETIME
+    );
+`, (err) => {
+    if (err) console.error('Signup attempts table error:', err);
 });
 
 // Add missing columns if they don't exist
@@ -320,6 +370,43 @@ function sanitizeInput(input) {
     return input.trim().replace(/[<>\"']/g, '');
 }
 
+function verifyOwnerCredentials(requesterEmail, requesterPassword, callback) {
+    const normalizedEmail = sanitizeInput(requesterEmail || '').toLowerCase();
+    if (!normalizedEmail || !requesterPassword) {
+        return callback(null, false);
+    }
+
+    db.get('SELECT * FROM users WHERE email = ?', [normalizedEmail], async (err, user) => {
+        if (err) return callback(err, false);
+        if (!user) return callback(null, false);
+
+        try {
+            const passwordMatch = await bcrypt.compare(requesterPassword, user.passwordHash);
+            const isOwnerUser = Number(user.isOwner) === 1 || normalizedEmail === OWNER_EMAIL;
+            callback(null, Boolean(passwordMatch && isOwnerUser));
+        } catch (compareErr) {
+            callback(compareErr, false);
+        }
+    });
+}
+
+function recordSignupAttempt(email, fullName, status = 'pending', lastError = '') {
+    db.run(
+        `INSERT INTO signup_attempts (email, fullName, attemptCount, firstAttemptAt, lastAttemptAt, status, lastError)
+         VALUES (?, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?, ?)
+         ON CONFLICT(email) DO UPDATE SET
+            fullName = excluded.fullName,
+            attemptCount = signup_attempts.attemptCount + 1,
+            lastAttemptAt = CURRENT_TIMESTAMP,
+            status = excluded.status,
+            lastError = excluded.lastError`,
+        [email, fullName, status, lastError],
+        (err) => {
+            if (err) console.error('Signup attempt record error:', err);
+        }
+    );
+}
+
 // Helper function to generate 6-digit recovery code
 function generateRecoveryCode() {
     return Math.floor(Math.random() * 900000) + 100000;
@@ -345,42 +432,347 @@ app.post('/api/register', loginLimiter, async (req, res) => {
             return res.status(400).json({ error: 'Password must be 8+ characters with 1 number and 1 uppercase letter' });
         }
 
-        // Check if user already exists
-        db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existing) => {
-            if (err) {
-                return res.status(500).json({ error: 'Database error' });
-            }
-            
-            if (existing) {
-                return res.status(400).json({ error: 'Email already registered' });
-            }
+        const completeRegistration = async () => {
+            // Check if user already exists
+            db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existing) => {
+                if (err) {
+                    return res.status(500).json({ error: 'Database error' });
+                }
+                
+                if (existing) {
+                    return res.status(400).json({ error: 'Email already registered' });
+                }
 
-            // Hash password
-            const passwordHash = await bcrypt.hash(password, 10);
-            const recoveryCode = generateRecoveryCode();
+                // Hash password
+                const passwordHash = await bcrypt.hash(password, 10);
+                const recoveryCode = generateRecoveryCode();
+                const isOwner = email === OWNER_EMAIL ? 1 : 0;
+                const role = isOwner ? 'Owner' : 'Staff';
+                const isPrimaryAdmin = isOwner ? 1 : 0;
 
-            // Store user in database
-            db.run(
-                'INSERT INTO users (email, passwordHash, recoveryCode) VALUES (?, ?, ?)',
-                [email, passwordHash, recoveryCode],
-                function(err) {
-                    if (err) {
-                        return res.status(500).json({ error: 'Failed to create account' });
+                // Store user in database
+                db.run(
+                    'INSERT INTO users (email, passwordHash, recoveryCode, role, isPrimaryAdmin, isOwner) VALUES (?, ?, ?, ?, ?, ?)',
+                    [email, passwordHash, recoveryCode, role, isPrimaryAdmin, isOwner],
+                    function(insertErr) {
+                        if (insertErr) {
+                            return res.status(500).json({ error: 'Failed to create account' });
+                        }
+
+                        res.json({
+                            success: true,
+                            message: 'Account created successfully',
+                            recoveryCode: recoveryCode.toString(),
+                            email: email,
+                            fullName: fullName,
+                            role: role,
+                            isOwner: isOwner,
+                            isPrimaryAdmin: isPrimaryAdmin
+                        });
+
+                        db.run(
+                            `UPDATE signup_attempts
+                             SET status = 'registered', lastError = '', reviewedAt = CURRENT_TIMESTAMP
+                             WHERE email = ?`,
+                            [email],
+                            () => {}
+                        );
                     }
+                );
+            });
+        };
 
-                    res.json({
-                        success: true,
-                        message: 'Account created successfully',
-                        recoveryCode: recoveryCode.toString(),
-                        email: email,
-                        fullName: fullName
+        // Registration allowlist: non-owner emails must be pre-approved.
+        if (email !== OWNER_EMAIL) {
+            db.get('SELECT email FROM approved_emails WHERE lower(email) = ?', [email], (approvalErr, approvedRow) => {
+                if (approvalErr) {
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                if (!approvedRow) {
+                    recordSignupAttempt(
+                        email,
+                        fullName,
+                        'pending',
+                        'Not approved for account creation'
+                    );
+                    return res.status(403).json({
+                        error: 'This email is not approved yet. Ask the owner to approve it in Settings > Team > Account Approvals.'
                     });
+                }
+
+                completeRegistration();
+            });
+            return;
+        }
+
+        completeRegistration();
+    } catch (error) {
+        console.error('Registration error:', error);
+        res.status(500).json({ error: 'Registration failed' });
+    }
+});
+
+// List approved emails (owner only)
+app.post('/api/approvals/list', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can manage approved emails' });
+
+            db.all('SELECT email, approvedBy, createdAt FROM approved_emails ORDER BY createdAt DESC', [], (listErr, rows) => {
+                if (listErr) return res.status(500).json({ error: 'Database error' });
+                res.json({ success: true, approvals: rows || [] });
+            });
+        });
+    } catch (error) {
+        console.error('Approvals list error:', error);
+        res.status(500).json({ error: 'Failed to list approved emails' });
+    }
+});
+
+// List signup attempts for owner review queue (owner only)
+app.post('/api/approvals/attempts', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can review signup attempts' });
+
+            db.all(
+                `SELECT email, fullName, attemptCount, firstAttemptAt, lastAttemptAt, status, lastError, reviewedBy, reviewedAt
+                 FROM signup_attempts
+                 ORDER BY lastAttemptAt DESC`,
+                [],
+                (listErr, rows) => {
+                    if (listErr) return res.status(500).json({ error: 'Database error' });
+                    res.json({ success: true, attempts: rows || [] });
                 }
             );
         });
     } catch (error) {
-        console.error('Registration error:', error);
-        res.status(500).json({ error: 'Registration failed' });
+        console.error('Attempts list error:', error);
+        res.status(500).json({ error: 'Failed to list signup attempts' });
+    }
+});
+
+// Add approved email (owner only)
+app.post('/api/approvals/add', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ error: 'Valid email is required' });
+        }
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can manage approved emails' });
+
+            db.run(
+                'INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)',
+                [email, requesterEmail],
+                function(insertErr) {
+                    if (insertErr) return res.status(500).json({ error: 'Database error' });
+
+                    db.run(
+                        `UPDATE signup_attempts
+                         SET status = 'approved', lastError = '', reviewedBy = ?, reviewedAt = CURRENT_TIMESTAMP
+                         WHERE email = ?`,
+                        [requesterEmail, email],
+                        () => {}
+                    );
+
+                    res.json({ success: true, email });
+                }
+            );
+        });
+    } catch (error) {
+        console.error('Approvals add error:', error);
+        res.status(500).json({ error: 'Failed to approve email' });
+    }
+});
+
+// Remove approved email (owner only)
+app.post('/api/approvals/remove', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        if (email === OWNER_EMAIL) {
+            return res.status(400).json({ error: 'Cannot remove owner email from approvals' });
+        }
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can manage approved emails' });
+
+            db.run('DELETE FROM approved_emails WHERE email = ?', [email], function(removeErr) {
+                if (removeErr) return res.status(500).json({ error: 'Database error' });
+
+                db.run(
+                    `UPDATE signup_attempts
+                     SET status = 'denied', lastError = 'Denied by owner', reviewedBy = ?, reviewedAt = CURRENT_TIMESTAMP
+                     WHERE email = ?`,
+                    [requesterEmail, email],
+                    () => {}
+                );
+
+                res.json({ success: true, removed: this.changes > 0, email });
+            });
+        });
+    } catch (error) {
+        console.error('Approvals remove error:', error);
+        res.status(500).json({ error: 'Failed to remove approved email' });
+    }
+});
+
+// Approve a signup attempt directly from queue (owner only)
+app.post('/api/approvals/attempts/approve', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+
+        if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return res.status(400).json({ error: 'Valid email is required' });
+        }
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can review signup attempts' });
+
+            db.run(
+                'INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)',
+                [email, requesterEmail],
+                function(insertErr) {
+                    if (insertErr) return res.status(500).json({ error: 'Database error' });
+
+                    db.run(
+                        `UPDATE signup_attempts
+                         SET status = 'approved', lastError = '', reviewedBy = ?, reviewedAt = CURRENT_TIMESTAMP
+                         WHERE email = ?`,
+                        [requesterEmail, email],
+                        () => {}
+                    );
+
+                    res.json({ success: true, email });
+                }
+            );
+        });
+    } catch (error) {
+        console.error('Attempts approve error:', error);
+        res.status(500).json({ error: 'Failed to approve signup attempt' });
+    }
+});
+
+// Deny a signup attempt directly from queue (owner only)
+app.post('/api/approvals/attempts/deny', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        const email = sanitizeInput(req.body.email || '').toLowerCase();
+        const reason = sanitizeInput(req.body.reason || 'Denied by owner');
+
+        if (!email) {
+            return res.status(400).json({ error: 'Email is required' });
+        }
+
+        if (email === OWNER_EMAIL) {
+            return res.status(400).json({ error: 'Owner email cannot be denied' });
+        }
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can review signup attempts' });
+
+            db.run('DELETE FROM approved_emails WHERE email = ?', [email], function(removeErr) {
+                if (removeErr) return res.status(500).json({ error: 'Database error' });
+
+                db.run(
+                    `INSERT INTO signup_attempts (email, fullName, attemptCount, firstAttemptAt, lastAttemptAt, status, lastError, reviewedBy, reviewedAt)
+                     VALUES (?, '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'denied', ?, ?, CURRENT_TIMESTAMP)
+                     ON CONFLICT(email) DO UPDATE SET
+                        status = 'denied',
+                        lastError = ?,
+                        reviewedBy = ?,
+                        reviewedAt = CURRENT_TIMESTAMP`,
+                    [email, reason, requesterEmail, reason, requesterEmail],
+                    () => {}
+                );
+
+                res.json({ success: true, email });
+            });
+        });
+    } catch (error) {
+        console.error('Attempts deny error:', error);
+        res.status(500).json({ error: 'Failed to deny signup attempt' });
+    }
+});
+
+// Remove a team member account (owner only)
+app.post('/api/team/remove', async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        const targetEmail = sanitizeInput(req.body.targetEmail || '').toLowerCase();
+
+        if (!targetEmail) {
+            return res.status(400).json({ error: 'Target email is required' });
+        }
+
+        if (targetEmail === OWNER_EMAIL) {
+            return res.status(400).json({ error: 'Owner account cannot be removed' });
+        }
+
+        verifyOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only owner can remove team member accounts' });
+
+            db.get('SELECT email FROM users WHERE email = ?', [targetEmail], (findErr, user) => {
+                if (findErr) return res.status(500).json({ error: 'Database error' });
+                if (!user) return res.status(404).json({ error: 'User not found' });
+
+                db.run('DELETE FROM users WHERE email = ?', [targetEmail], function(removeErr) {
+                    if (removeErr) return res.status(500).json({ error: 'Database error' });
+
+                    db.run('DELETE FROM approved_emails WHERE email = ?', [targetEmail], () => {});
+                    db.run(
+                        `INSERT INTO signup_attempts (email, fullName, attemptCount, firstAttemptAt, lastAttemptAt, status, lastError, reviewedBy, reviewedAt)
+                         VALUES (?, '', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'removed', 'Removed by owner', ?, CURRENT_TIMESTAMP)
+                         ON CONFLICT(email) DO UPDATE SET
+                            status = 'removed',
+                            lastError = 'Removed by owner',
+                            reviewedBy = ?,
+                            reviewedAt = CURRENT_TIMESTAMP`,
+                        [targetEmail, requesterEmail, requesterEmail],
+                        () => {}
+                    );
+
+                    res.json({
+                        success: true,
+                        removed: this.changes > 0,
+                        email: targetEmail,
+                        message: 'Team member removed from system'
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Team remove error:', error);
+        res.status(500).json({ error: 'Failed to remove team member' });
     }
 });
 
@@ -411,7 +803,7 @@ app.post('/api/setup-admin', async (req, res) => {
             }
 
             // Keep owner identity tied to the owner email; all others become Admin.
-            const targetIsOwner = email === 'emilyjreed01@gmail.com' ? 1 : 0;
+            const targetIsOwner = email === OWNER_EMAIL ? 1 : 0;
             const role = targetIsOwner ? 'Owner' : 'Admin';
 
             const sql = 'UPDATE users SET role = ?, isPrimaryAdmin = ?, isOwner = ? WHERE email = ?';
@@ -469,14 +861,31 @@ app.post('/api/login', loginLimiter, async (req, res) => {
                 return res.status(401).json({ error: 'Invalid email or password' });
             }
 
+            const effectiveIsOwner = email === OWNER_EMAIL ? 1 : (user.isOwner || 0);
+            const effectiveRole = effectiveIsOwner ? 'Owner' : (user.role || 'Staff');
+            const effectiveIsPrimaryAdmin = effectiveIsOwner ? 1 : (user.isPrimaryAdmin || 0);
+
+            // Keep owner flags corrected in DB if they drift.
+            if (effectiveIsOwner && (user.isOwner !== 1 || user.role !== 'Owner' || user.isPrimaryAdmin !== 1)) {
+                db.run(
+                    'UPDATE users SET role = ?, isPrimaryAdmin = 1, isOwner = 1 WHERE email = ?',
+                    ['Owner', email],
+                    (fixErr) => {
+                        if (fixErr) {
+                            console.error('Owner role correction error:', fixErr);
+                        }
+                    }
+                );
+            }
+
             // Login successful
             res.json({
                 success: true,
                 message: 'Login successful',
                 email: user.email,
-                role: user.role || 'Staff',
-                isOwner: user.isOwner || 0,
-                isPrimaryAdmin: user.isPrimaryAdmin || 0,
+                role: effectiveRole,
+                isOwner: effectiveIsOwner,
+                isPrimaryAdmin: effectiveIsPrimaryAdmin,
                 recoveryCode: user.recoveryCode.toString()
             });
         });
