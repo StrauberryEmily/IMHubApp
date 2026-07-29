@@ -2520,7 +2520,7 @@
                 const allUsers = JSON.parse(localStorage.getItem('allUsers') || '{}');
                 const userData = allUsers[email] || {};
                 const userRole = data.role || userData.role || 'Staff';
-                const isOwner = data.isOwner || 0;
+                const ownerFlag = data.isOwner || 0;
                 const isPrimaryAdmin = data.isPrimaryAdmin || 0;
                 
                 // Login successful - store in localStorage
@@ -2528,7 +2528,7 @@
                 localStorage.setItem('currentUserName', userData.name || 'User');
                 localStorage.setItem('currentUserJobTitle', userData.location || 'Staff');
                 localStorage.setItem('userRole', userRole);
-                localStorage.setItem('isOwner', isOwner);
+                localStorage.setItem('isOwner', ownerFlag);
                 localStorage.setItem('isPrimaryAdmin', isPrimaryAdmin);
                 localStorage.setItem('recoveryCode', data.recoveryCode);
                 
