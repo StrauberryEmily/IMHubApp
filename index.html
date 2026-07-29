@@ -2233,7 +2233,7 @@
                             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
                                 <select id="newMemberRole" style="padding:10px;border:1px solid var(--border);border-radius:6px;">
                                     <option value="">Select Role</option>
-                                    <option value="Admin">Admin (Full Access)</option>
+                                    <option value="Admin">Admin (Owner Approval Required)</option>
                                     <option value="Manager">Manager (Manage + Report)</option>
                                     <option value="Staff">Staff (View + Add Data)</option>
                                     <option value="Viewer">Viewer (Read Only)</option>
@@ -2416,9 +2416,13 @@
         // Initialize authentication on page load
         function checkAuth() {
             const currentUser = localStorage.getItem('currentUser');
-            if (!currentUser) {
+            const isAuthenticated = sessionStorage.getItem('imhAuthenticated') === '1';
+            const sessionUser = sessionStorage.getItem('imhSessionUser');
+
+            if (!isAuthenticated || !currentUser || (sessionUser && sessionUser !== currentUser)) {
                 document.getElementById('authContainer').style.display = 'flex';
                 document.getElementById('appContainer').style.display = 'none';
+                showAuthPage('login');
             } else {
                 document.getElementById('authContainer').style.display = 'none';
                 document.getElementById('appContainer').style.display = 'flex';
@@ -2564,6 +2568,10 @@
                 localStorage.setItem('isOwner', ownerFlag);
                 localStorage.setItem('isPrimaryAdmin', isPrimaryAdmin);
                 localStorage.setItem('recoveryCode', data.recoveryCode);
+
+                // Mark this browser session as authenticated.
+                sessionStorage.setItem('imhAuthenticated', '1');
+                sessionStorage.setItem('imhSessionUser', data.email);
                 
                 checkAuth();
             })
@@ -2636,6 +2644,8 @@
                 localStorage.setItem('currentUserName', data.fullName || fullName);
                 localStorage.setItem('currentUserJobTitle', 'Staff');
                 localStorage.setItem('recoveryCode', data.recoveryCode);
+                sessionStorage.setItem('imhAuthenticated', '1');
+                sessionStorage.setItem('imhSessionUser', data.email);
                 
                 // Show recovery code to user
                 setTimeout(() => {
@@ -2719,6 +2729,8 @@
             localStorage.removeItem('currentUserName');
             localStorage.removeItem('currentUserJobTitle');
             localStorage.removeItem('currentUserLocation');
+            sessionStorage.removeItem('imhAuthenticated');
+            sessionStorage.removeItem('imhSessionUser');
             checkAuth();
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';
@@ -2823,28 +2835,49 @@
             document.getElementById('rolesText').textContent = userRoles.join(', ');
         }
         
-        // Sync admin role to backend database
+        // Sync admin role to backend database with owner confirmation.
         function syncAdminToBackend(email, isAdmin) {
+            if (!isAdmin) return;
+
+            if (!isCurrentUserOwner()) {
+                alert('❌ Only the OWNER account can grant Admin access.');
+                return;
+            }
+
+            const requesterEmail = (localStorage.getItem('currentUser') || '').toLowerCase().trim();
+            const requesterPassword = prompt(`Owner password required to grant Admin access to ${email}:`);
+
+            if (!requesterPassword) {
+                alert('Admin role assignment cancelled.');
+                return;
+            }
+
             fetch(apiUrl('/api/setup-admin'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
-                    email: email.toLowerCase().trim(), 
-                    setupKey: 'ADMIN_SETUP_2024' 
+                    email: email.toLowerCase().trim(),
+                    requesterEmail,
+                    requesterPassword
                 })
             })
             .then(parseApiResponse)
             .then(data => {
                 if (data.success) {
+                    alert(`✅ ${email} now has Admin access in the backend.`);
                     console.log('✅ Admin synced to backend:', email);
                 } else if (data.error === 'User not found') {
                     // User exists but hasn't registered yet - will become admin when they do
                     console.log('📧 User will be admin when they register with:', email);
                 } else {
+                    alert(`❌ Failed to grant Admin access: ${data.error}`);
                     console.error('❌ Sync failed:', data.error);
                 }
             })
-            .catch(err => console.error('Sync error:', err));
+            .catch(err => {
+                alert('❌ Failed to grant Admin access: ' + formatApiNetworkError(err));
+                console.error('Sync error:', err);
+            });
         }
         
         function addTeamMember() {
@@ -2857,6 +2890,11 @@
             
             if (!email || !name || !role) {
                 alert('⚠️ Please fill all fields');
+                return;
+            }
+
+            if (role === 'Admin' && !isCurrentUserOwner()) {
+                alert('❌ Only the OWNER account can assign the Admin role.');
                 return;
             }
             
@@ -2929,6 +2967,11 @@
             const user = allUsers[email];
             const newRole = prompt('Enter new role (Admin, Manager, Staff, Viewer):', user.roles?.[0] || user.role);
             if (newRole) {
+                if (newRole === 'Admin' && !isCurrentUserOwner()) {
+                    alert('❌ Only the OWNER account can assign the Admin role.');
+                    return;
+                }
+
                 user.roles = [newRole];
                 user.role = newRole;
                 localStorage.setItem('allUsers', JSON.stringify(allUsers));

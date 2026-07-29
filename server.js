@@ -50,6 +50,7 @@ if (!fs.existsSync(envPath) && fs.existsSync(encEnvPath)) {
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1);
 
 // Security middleware - strict CORS (only allow your app domain)
 const allowedOrigins = [
@@ -120,7 +121,8 @@ function validatePassword(password) {
 }
 
 // ============= DATABASE INITIALIZATION =============
-const dbPath = path.join(__dirname, 'users.db');
+// Use DB_PATH for persistent storage on platforms like Railway volumes.
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'users.db');
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ Database connection error:', err);
@@ -382,46 +384,56 @@ app.post('/api/register', loginLimiter, async (req, res) => {
     }
 });
 
-// Setup admin endpoint (with secret key for security)
+// Setup admin endpoint (owner credential verification required)
 app.post('/api/setup-admin', async (req, res) => {
     try {
         const email = sanitizeInput(req.body.email || '').toLowerCase();
-        const setupKey = req.body.setupKey || '';
-        
-        // Check setup key (simple security)
-        const validSetupKey = 'ADMIN_SETUP_2024';
-        if (setupKey !== validSetupKey) {
-            return res.status(403).json({ error: 'Invalid setup key' });
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+
+        if (!email || !requesterEmail || !requesterPassword) {
+            return res.status(400).json({ error: 'Target email, owner email, and owner password are required' });
         }
 
-        if (!email) {
-            return res.status(400).json({ error: 'Email is required' });
-        }
-
-        // Determine special status
-        const isOwner = email === 'emilyjreed01@gmail.com' ? 1 : 0;
-        const role = isOwner ? 'Owner' : 'Admin';
-
-        // Update user to admin/owner
-        const sql = 'UPDATE users SET role = ?, isPrimaryAdmin = ?, isOwner = ? WHERE email = ?';
-        const params = [role, isOwner, isOwner, email];
-
-        db.run(sql, params, function(err) {
-            if (err) {
+        // Verify requester is the owner and password is correct.
+        db.get('SELECT * FROM users WHERE email = ?', [requesterEmail], async (requesterErr, requester) => {
+            if (requesterErr) {
                 return res.status(500).json({ error: 'Database error' });
             }
 
-            if (this.changes === 0) {
-                return res.status(404).json({ error: 'User not found' });
+            if (!requester) {
+                return res.status(403).json({ error: 'Only owner can assign admin role' });
             }
 
-            res.json({
-                success: true,
-                message: `${email} has been set as ${role}`,
-                email: email,
-                role: role,
-                isOwner: isOwner,
-                isPrimaryAdmin: isOwner
+            const ownerPasswordMatch = await bcrypt.compare(requesterPassword, requester.passwordHash);
+            if (!ownerPasswordMatch || Number(requester.isOwner) !== 1) {
+                return res.status(403).json({ error: 'Only owner can assign admin role' });
+            }
+
+            // Keep owner identity tied to the owner email; all others become Admin.
+            const targetIsOwner = email === 'emilyjreed01@gmail.com' ? 1 : 0;
+            const role = targetIsOwner ? 'Owner' : 'Admin';
+
+            const sql = 'UPDATE users SET role = ?, isPrimaryAdmin = ?, isOwner = ? WHERE email = ?';
+            const params = [role, targetIsOwner, targetIsOwner, email];
+
+            db.run(sql, params, function(updateErr) {
+                if (updateErr) {
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                if (this.changes === 0) {
+                    return res.status(404).json({ error: 'User not found' });
+                }
+
+                res.json({
+                    success: true,
+                    message: `${email} has been set as ${role}`,
+                    email: email,
+                    role: role,
+                    isOwner: targetIsOwner,
+                    isPrimaryAdmin: targetIsOwner
+                });
             });
         });
     } catch (error) {
