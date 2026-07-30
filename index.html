@@ -5050,57 +5050,71 @@
             const allElements = document.querySelectorAll('*');
             for (let el of allElements) {
                 if (el.textContent && el.textContent.includes('QUICK ORDERING WORKFLOW')) {
-                    // Found it - traverse up to find the parent container
-                    let parent = el;
-                    while (parent && parent.parentElement) {
-                        parent = parent.parentElement;
-                        // Stop at reasonable container levels
-                        if (parent.style && (parent.style.position === 'fixed' || parent.style.position === 'absolute' || 
-                            parent.className?.includes('sidebar') || parent.className?.includes('panel') || 
-                            parent.className?.includes('overlay'))) {
-                            parent.style.display = 'none !important';
-                            parent.remove();
-                            return;
-                        }
-                        if (parent.classList.contains('stock-right-sidebar') || parent.classList.contains('widget')) {
-                            parent.style.display = 'none !important';
-                            parent.remove();
-                            return;
-                        }
+                    console.log('Found workflow panel element:', el.tagName, el.className);
+                    // Found it - remove the closest significant container
+                    let toRemove = el;
+                    while (toRemove && toRemove.parentElement) {
+                        const parent = toRemove.parentElement;
+                        // Stop when we hit main content area or body
+                        if (parent.tagName === 'BODY' || parent.tagName === 'HTML' || parent.tagName === 'MAIN') break;
+                        toRemove = parent;
                     }
-                    // If we can't find a container, just remove the element with the text
-                    el.closest('div')?.remove();
+                    toRemove.style.display = 'none !important';
+                    toRemove.remove();
+                    console.log('Removed workflow panel');
                     return;
                 }
             }
             
-            // Method 2: Look for elements with "Select Supplier" button text
-            const supplierBtn = Array.from(document.querySelectorAll('button')).find(b => 
-                b.textContent.includes('Select Supplier')
-            );
-            if (supplierBtn) {
-                // Remove the entire panel container
-                let container = supplierBtn.closest('div[class*="panel"]') || 
-                              supplierBtn.closest('div[class*="sidebar"]') ||
-                              supplierBtn.closest('aside') ||
-                              supplierBtn.parentElement?.parentElement?.parentElement;
-                if (container) {
-                    container.style.display = 'none !important';
-                    container.remove();
-                }
-            }
+            // Method 2: Look for elements with "Select Supplier" button text - very aggressive removal
+            const buttons = Array.from(document.querySelectorAll('button'));
+            const supplierBtn = buttons.find(b => b.textContent.includes('Select Supplier'));
+            const selectItemsBtn = buttons.find(b => b.textContent.includes('Select Items'));
             
-            // Method 3: Hide by setting display:none on stock-right-sidebar
-            const sidebar = document.querySelector('.stock-right-sidebar');
-            if (sidebar) {
-                sidebar.style.display = 'none !important';
-                sidebar.innerHTML = '';
+            if (supplierBtn || selectItemsBtn) {
+                console.log('Found workflow buttons, removing parent containers');
+                const btn = supplierBtn || selectItemsBtn;
+                
+                // Try multiple levels of parent removal
+                let el = btn;
+                for (let i = 0; i < 8; i++) {
+                    if (!el.parentElement || el.parentElement.tagName === 'BODY' || el.parentElement.tagName === 'HTML') break;
+                    el = el.parentElement;
+                    if (el.className && (el.className.includes('workflow') || el.className.includes('panel') || 
+                        el.className.includes('sidebar') || el.className.includes('overlay') || el.className.includes('popup'))) {
+                        console.log('Removing workflow parent:', el.className);
+                        el.style.display = 'none !important';
+                        el.remove();
+                        return;
+                    }
+                }
+                // If specific class not found, remove the button's top-level container
+                el.style.display = 'none !important';
+                el.remove();
             }
+        }
+        
+        // Set up continuous monitoring with MutationObserver to catch dynamically added workflow panels
+        function setupWorkflowPanelMonitor() {
+            const observer = new MutationObserver(() => {
+                removeQuickOrderingWorkflow();
+            });
+            
+            observer.observe(document.body, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                characterData: true
+            });
+            
+            console.log('Workflow panel monitor started');
         }
         
         function initializeApp() {
             // Remove the workflow panel immediately on app init
             removeQuickOrderingWorkflow();
+            // Start monitoring for dynamically added workflow panels
+            setupWorkflowPanelMonitor();
             
             // Load user data
             const userName = localStorage.getItem('currentUserName');
@@ -7492,6 +7506,10 @@
             if (pageId === 'stock') {
                 renderStockPage();
                 removeQuickOrderingWorkflow();
+                // Set up repeated checks to catch any workflow panels added after render
+                setTimeout(() => { removeQuickOrderingWorkflow(); }, 100);
+                setTimeout(() => { removeQuickOrderingWorkflow(); }, 500);
+                setTimeout(() => { removeQuickOrderingWorkflow(); }, 1000);
                 enforceStockSidebarLock();
             }
             if (pageId === 'ordering') { renderOrderingOverview(); }
