@@ -5044,7 +5044,64 @@
         // Update time every minute
         setInterval(updateTimeAndGreeting, 60000);
         
+        // Remove workflow panel immediately
+        function removeQuickOrderingWorkflow() {
+            // Method 1: Find and remove any element containing "QUICK ORDERING WORKFLOW" text
+            const allElements = document.querySelectorAll('*');
+            for (let el of allElements) {
+                if (el.textContent && el.textContent.includes('QUICK ORDERING WORKFLOW')) {
+                    // Found it - traverse up to find the parent container
+                    let parent = el;
+                    while (parent && parent.parentElement) {
+                        parent = parent.parentElement;
+                        // Stop at reasonable container levels
+                        if (parent.style && (parent.style.position === 'fixed' || parent.style.position === 'absolute' || 
+                            parent.className?.includes('sidebar') || parent.className?.includes('panel') || 
+                            parent.className?.includes('overlay'))) {
+                            parent.style.display = 'none !important';
+                            parent.remove();
+                            return;
+                        }
+                        if (parent.classList.contains('stock-right-sidebar') || parent.classList.contains('widget')) {
+                            parent.style.display = 'none !important';
+                            parent.remove();
+                            return;
+                        }
+                    }
+                    // If we can't find a container, just remove the element with the text
+                    el.closest('div')?.remove();
+                    return;
+                }
+            }
+            
+            // Method 2: Look for elements with "Select Supplier" button text
+            const supplierBtn = Array.from(document.querySelectorAll('button')).find(b => 
+                b.textContent.includes('Select Supplier')
+            );
+            if (supplierBtn) {
+                // Remove the entire panel container
+                let container = supplierBtn.closest('div[class*="panel"]') || 
+                              supplierBtn.closest('div[class*="sidebar"]') ||
+                              supplierBtn.closest('aside') ||
+                              supplierBtn.parentElement?.parentElement?.parentElement;
+                if (container) {
+                    container.style.display = 'none !important';
+                    container.remove();
+                }
+            }
+            
+            // Method 3: Hide by setting display:none on stock-right-sidebar
+            const sidebar = document.querySelector('.stock-right-sidebar');
+            if (sidebar) {
+                sidebar.style.display = 'none !important';
+                sidebar.innerHTML = '';
+            }
+        }
+        
         function initializeApp() {
+            // Remove the workflow panel immediately on app init
+            removeQuickOrderingWorkflow();
+            
             // Load user data
             const userName = localStorage.getItem('currentUserName');
             const userJobTitle = localStorage.getItem('currentUserJobTitle');
@@ -6919,6 +6976,7 @@
             renderStockCatalog(filtered);
             renderStockItemDetailsPanel();
             renderStockSidebarSections();
+            removeQuickOrderingWorkflow();
             enforceStockSidebarLock();
         }
         
@@ -7433,6 +7491,7 @@
             if (pageId === 'tasks') { renderTasksList(); }
             if (pageId === 'stock') {
                 renderStockPage();
+                removeQuickOrderingWorkflow();
                 enforceStockSidebarLock();
             }
             if (pageId === 'ordering') { renderOrderingOverview(); }
