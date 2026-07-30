@@ -5046,17 +5046,28 @@
         
         // Remove workflow panel immediately
         function removeQuickOrderingWorkflow() {
-            // Method 1: Find and remove any element containing "QUICK ORDERING WORKFLOW" text
+            console.log('removeQuickOrderingWorkflow called');
+            
+            // Method 1: Find and remove the stock-right-sidebar entirely (most direct approach)
+            const sidebar = document.querySelector('.stock-right-sidebar');
+            if (sidebar) {
+                console.log('Found stock-right-sidebar, removing it');
+                sidebar.style.display = 'none !important';
+                sidebar.remove();
+                return;
+            }
+            
+            // Method 2: Find element containing "Quick Ordering Workflow" text (correct casing)
             const allElements = document.querySelectorAll('*');
             for (let el of allElements) {
-                if (el.textContent && el.textContent.includes('QUICK ORDERING WORKFLOW')) {
+                if (el.textContent && el.textContent.includes('Quick Ordering Workflow')) {
                     console.log('Found workflow panel element:', el.tagName, el.className);
                     // Found it - remove the closest significant container
                     let toRemove = el;
                     while (toRemove && toRemove.parentElement) {
                         const parent = toRemove.parentElement;
                         // Stop when we hit main content area or body
-                        if (parent.tagName === 'BODY' || parent.tagName === 'HTML' || parent.tagName === 'MAIN') break;
+                        if (parent.tagName === 'BODY' || parent.tagName === 'HTML' || parent.tagName === 'MAIN' || parent.tagName === 'SECTION') break;
                         toRemove = parent;
                     }
                     toRemove.style.display = 'none !important';
@@ -5066,27 +5077,20 @@
                 }
             }
             
-            // Method 2: Look for elements with "Select Supplier" button text - very aggressive removal
-            const buttons = Array.from(document.querySelectorAll('button'));
-            const supplierBtn = buttons.find(b => b.textContent.includes('Select Supplier'));
-            const selectItemsBtn = buttons.find(b => b.textContent.includes('Select Items'));
-            
-            if (supplierBtn || selectItemsBtn) {
-                console.log('Found workflow buttons, removing parent containers');
-                const btn = supplierBtn || selectItemsBtn;
-                
-                // Try multiple levels of parent removal
-                let el = btn;
-                for (let i = 0; i < 8; i++) {
-                    if (!el.parentElement || el.parentElement.tagName === 'BODY' || el.parentElement.tagName === 'HTML') break;
-                    el = el.parentElement;
-                    if (el.className && (el.className.includes('workflow') || el.className.includes('panel') || 
-                        el.className.includes('sidebar') || el.className.includes('overlay') || el.className.includes('popup'))) {
+            // Method 3: Look for divs with workflow classes
+            const workflowDivs = document.querySelectorAll('[class*="workflow"], [class*="stock-workflow"]');
+            if (workflowDivs.length > 0) {
+                console.log('Found workflow divs:', workflowDivs.length);
+                // Find the parent container (stock-panel or stock-right-sidebar) and remove it
+                let el = workflowDivs[0];
+                while (el && el.parentElement) {
+                    if (el.className && (el.className.includes('sidebar') || el.className.includes('stock-right'))) {
                         console.log('Removing workflow parent:', el.className);
                         el.style.display = 'none !important';
                         el.remove();
                         return;
                     }
+                    el = el.parentElement;
                 }
                 // If specific class not found, remove the button's top-level container
                 el.style.display = 'none !important';
