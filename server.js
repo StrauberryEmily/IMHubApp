@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
+const multer = require('multer');
 const { execSync, spawnSync } = require('child_process');
 const sqlite3 = require('sqlite3').verbose();
 
@@ -124,6 +125,70 @@ function validatePassword(password) {
 // Use DB_PATH for persistent storage on platforms like Railway volumes.
 const dbPath = process.env.DB_PATH || path.join(__dirname, 'users.db');
 const OWNER_EMAIL = (process.env.OWNER_EMAIL || 'emilyjreed01@gmail.com').toLowerCase();
+const supplierStorageRoot = process.env.SUPPLIER_STORAGE_DIR || path.join(path.dirname(dbPath), 'supplier-logos');
+if (!fs.existsSync(supplierStorageRoot)) {
+    fs.mkdirSync(supplierStorageRoot, { recursive: true });
+}
+
+const ORDERING_SUPPLIER_IDS = new Set([
+    'coca-cola',
+    'schweppes',
+    'lion',
+    'bunkers',
+    'vittoria-coffee',
+    'dilmah-tea',
+    'bidfood',
+    'santos',
+    'springhill-farm',
+    'qantas',
+    'tupou'
+]);
+
+const logoStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, supplierStorageRoot),
+    filename: (req, file, cb) => {
+        const supplierId = sanitizeSupplierId(req.body.supplierId || 'supplier');
+        const ext = path.extname(file.originalname || '').toLowerCase();
+        const safeExt = ['.png', '.jpg', '.jpeg', '.webp', '.svg', '.gif'].includes(ext) ? ext : '.png';
+        cb(null, `${supplierId}-${Date.now()}${safeExt}`);
+    }
+});
+
+const uploadSupplierLogo = multer({
+    storage: logoStorage,
+    limits: { fileSize: 4 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        if (!file || !file.mimetype || !file.mimetype.startsWith('image/')) {
+            return cb(new Error('Only image files are allowed'));
+        }
+        cb(null, true);
+    }
+});
+
+function sanitizeSupplierId(value) {
+    return String(value || '').toLowerCase().trim().replace(/[^a-z0-9-]/g, '');
+}
+
+function safeUnlink(filePath) {
+    if (!filePath) return;
+    if (!fs.existsSync(filePath)) return;
+    try {
+        fs.unlinkSync(filePath);
+    } catch (err) {
+        console.error('Failed to remove file:', err.message);
+    }
+}
+
+function resolveLogoPathFromStorageKey(storageKey) {
+    if (!storageKey) return '';
+    return path.join(supplierStorageRoot, path.basename(storageKey));
+}
+
+function buildSupplierLogoUrl(storageKey) {
+    if (!storageKey) return '';
+    return `/supplier-logos/${encodeURIComponent(path.basename(storageKey))}`;
+}
+
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
         console.error('❌ Database connection error:', err);
@@ -229,6 +294,65 @@ db.run(`
 `, (err) => {
     if (err) console.error('Table creation error:', err);
 });
+
+db.run(`
+    CREATE TABLE IF NOT EXISTS supplier_profiles (
+        supplierId TEXT PRIMARY KEY,
+        displayName TEXT,
+        logoUrl TEXT,
+        logoStorageKey TEXT,
+        portalUrl TEXT,
+        importantNotes TEXT,
+        orderingMethod TEXT,
+        preferredUnits TEXT,
+        deliveryFrequency TEXT,
+        accountManager TEXT,
+        phone TEXT,
+        email TEXT,
+        lastOrdered TEXT,
+        documentsUploaded INTEGER DEFAULT 0,
+        logoUpdatedAt DATETIME,
+        logoUpdatedBy TEXT,
+        lastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updatedBy TEXT
+    );
+`, (err) => {
+    if (err) console.error('Supplier profiles table error:', err);
+});
+
+db.all('PRAGMA table_info(supplier_profiles)', (err, columns) => {
+    if (err || !columns) return;
+    const names = columns.map((col) => col.name);
+    const migrations = [
+        ['displayName', "ALTER TABLE supplier_profiles ADD COLUMN displayName TEXT"],
+        ['logoUrl', "ALTER TABLE supplier_profiles ADD COLUMN logoUrl TEXT"],
+        ['logoStorageKey', "ALTER TABLE supplier_profiles ADD COLUMN logoStorageKey TEXT"],
+        ['portalUrl', "ALTER TABLE supplier_profiles ADD COLUMN portalUrl TEXT"],
+        ['importantNotes', "ALTER TABLE supplier_profiles ADD COLUMN importantNotes TEXT"],
+        ['orderingMethod', "ALTER TABLE supplier_profiles ADD COLUMN orderingMethod TEXT"],
+        ['preferredUnits', "ALTER TABLE supplier_profiles ADD COLUMN preferredUnits TEXT"],
+        ['deliveryFrequency', "ALTER TABLE supplier_profiles ADD COLUMN deliveryFrequency TEXT"],
+        ['accountManager', "ALTER TABLE supplier_profiles ADD COLUMN accountManager TEXT"],
+        ['phone', "ALTER TABLE supplier_profiles ADD COLUMN phone TEXT"],
+        ['email', "ALTER TABLE supplier_profiles ADD COLUMN email TEXT"],
+        ['lastOrdered', "ALTER TABLE supplier_profiles ADD COLUMN lastOrdered TEXT"],
+        ['documentsUploaded', "ALTER TABLE supplier_profiles ADD COLUMN documentsUploaded INTEGER DEFAULT 0"],
+        ['logoUpdatedAt', "ALTER TABLE supplier_profiles ADD COLUMN logoUpdatedAt DATETIME"],
+        ['logoUpdatedBy', "ALTER TABLE supplier_profiles ADD COLUMN logoUpdatedBy TEXT"],
+        ['lastUpdated', "ALTER TABLE supplier_profiles ADD COLUMN lastUpdated DATETIME DEFAULT CURRENT_TIMESTAMP"],
+        ['updatedBy', "ALTER TABLE supplier_profiles ADD COLUMN updatedBy TEXT"]
+    ];
+
+    migrations.forEach(([columnName, sql]) => {
+        if (!names.includes(columnName)) {
+            db.run(sql, (migrationErr) => {
+                if (migrationErr) {
+                    console.error(`Supplier profile migration failed for ${columnName}:`, migrationErr.message);
+                }
+            });
+        }
+    });
+});
 // For Gmail: Use App Password (not your regular password)
 // Generate at: https://myaccount.google.com/apppasswords
 const transporter = nodemailer.createTransport({
@@ -238,6 +362,17 @@ const transporter = nodemailer.createTransport({
         pass: process.env.EMAIL_PASSWORD || 'your-app-password'
     }
 });
+
+function isEmailServiceConfigured() {
+    const user = process.env.EMAIL_USER || '';
+    const pass = process.env.EMAIL_PASSWORD || '';
+    if (!user || !pass) return false;
+    if (user === 'your-email@gmail.com') return false;
+    if (pass === 'your-app-password') return false;
+    return true;
+}
+
+const TUPOU_ORDER_EMAIL = (process.env.TUPOU_ORDER_EMAIL || process.env.EMAIL_USER || OWNER_EMAIL || '').trim();
 
 // Generate a random reset token
 function generateResetToken() {
@@ -362,6 +497,230 @@ app.post('/api/verify-reset-token', (req, res) => {
     });
 });
 
+// Start password recovery flow for an existing account.
+app.post('/api/password-recovery/start', emailLimiter, (req, res) => {
+    const email = sanitizeInput(req.body.email || '').toLowerCase();
+
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    db.get('SELECT email, recoveryCode FROM users WHERE email = ?', [email], async (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ error: 'No account found for that email.' });
+        }
+
+        if (!isEmailServiceConfigured()) {
+            return res.json({
+                success: true,
+                message: 'Email service is not configured. Enter your 6-digit recovery code to reset your password.',
+                emailConfigured: false
+            });
+        }
+
+        try {
+            await transporter.sendMail({
+                from: process.env.EMAIL_USER || 'noreply@imh.com',
+                to: email,
+                subject: 'IMH Password Recovery Code',
+                text: `Your IMH recovery code is ${user.recoveryCode}. Enter it on the Reset Password screen.`,
+                html: `<p>Your IMH recovery code is <strong style="font-size:20px;letter-spacing:2px;">${user.recoveryCode}</strong>.</p><p>Enter this code on the Reset Password screen.</p>`
+            });
+
+            return res.json({
+                success: true,
+                message: 'Recovery code sent to your email.',
+                emailConfigured: true
+            });
+        } catch (mailErr) {
+            console.error('Password recovery email error:', mailErr);
+            return res.status(500).json({ error: 'Failed to send recovery email. Try again later.' });
+        }
+    });
+});
+
+// Complete password recovery by validating recovery code and setting a new password.
+app.post('/api/password-recovery/reset', emailLimiter, async (req, res) => {
+    const email = sanitizeInput(req.body.email || '').toLowerCase();
+    const recoveryCode = sanitizeInput(req.body.recoveryCode || '');
+    const newPassword = req.body.newPassword || '';
+
+    if (!email || !recoveryCode || !newPassword) {
+        return res.status(400).json({ error: 'Email, recovery code, and new password are required.' });
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+
+    if (!/^[0-9]{6}$/.test(recoveryCode)) {
+        return res.status(400).json({ error: 'Recovery code must be 6 digits.' });
+    }
+
+    if (!validatePassword(newPassword)) {
+        return res.status(400).json({ error: 'Password must be 8+ characters with 1 number and 1 uppercase letter' });
+    }
+
+    db.get('SELECT email, recoveryCode FROM users WHERE email = ?', [email], async (err, user) => {
+        if (err) {
+            return res.status(500).json({ error: 'Database error' });
+        }
+
+        if (!user) {
+            return res.status(404).json({ error: 'No account found for that email.' });
+        }
+
+        if (String(user.recoveryCode) !== String(recoveryCode)) {
+            return res.status(401).json({ error: 'Invalid recovery code.' });
+        }
+
+        try {
+            const passwordHash = await bcrypt.hash(newPassword, 10);
+            const nextRecoveryCode = generateRecoveryCode().toString();
+
+            db.run(
+                'UPDATE users SET passwordHash = ?, recoveryCode = ? WHERE email = ?',
+                [passwordHash, nextRecoveryCode, email],
+                function(updateErr) {
+                    if (updateErr) {
+                        return res.status(500).json({ error: 'Failed to reset password.' });
+                    }
+
+                    return res.json({
+                        success: true,
+                        message: 'Password reset successful.',
+                        recoveryCode: nextRecoveryCode
+                    });
+                }
+            );
+        } catch (hashErr) {
+            return res.status(500).json({ error: 'Failed to reset password.' });
+        }
+    });
+});
+
+// Send Tupou order request email
+app.post('/api/orders/tupou-request', emailLimiter, async (req, res) => {
+    try {
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterName = sanitizeInput(req.body.requesterName || '');
+        const recipientEmail = sanitizeInput(req.body.recipientEmail || TUPOU_ORDER_EMAIL).toLowerCase();
+        const orderNumber = sanitizeInput(req.body.orderNumber || '');
+        const supplier = sanitizeInput(req.body.supplier || 'Tupou');
+        const dateOrdered = sanitizeInput(req.body.dateOrdered || '');
+        const expectedDelivery = sanitizeInput(req.body.expectedDelivery || '');
+        const notes = sanitizeInput(req.body.notes || '');
+
+        const rawItems = Array.isArray(req.body.items) ? req.body.items : [];
+        const items = rawItems
+            .map((entry) => ({
+                item: sanitizeInput(entry?.item || ''),
+                quantity: sanitizeInput(String(entry?.quantity || '')),
+                purchaseUnit: sanitizeInput(entry?.purchaseUnit || '')
+            }))
+            .filter((entry) => entry.item && entry.quantity && entry.purchaseUnit);
+
+        if (!items.length) {
+            const fallbackItem = sanitizeInput(req.body.item || '');
+            const fallbackQuantity = sanitizeInput(String(req.body.quantity || ''));
+            const fallbackUnit = sanitizeInput(req.body.purchaseUnit || '');
+            if (fallbackItem && fallbackQuantity && fallbackUnit) {
+                items.push({ item: fallbackItem, quantity: fallbackQuantity, purchaseUnit: fallbackUnit });
+            }
+        }
+
+        if (!requesterEmail || !items.length || !dateOrdered || !expectedDelivery) {
+            return res.status(400).json({ error: 'Missing required order request fields' });
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
+            return res.status(400).json({ error: 'Invalid requester email format' });
+        }
+
+        if (!recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)) {
+            return res.status(400).json({ error: 'Invalid recipient email format' });
+        }
+
+        if (!isEmailServiceConfigured()) {
+            return res.status(503).json({
+                error: 'Email service is not configured yet. Set EMAIL_USER and EMAIL_PASSWORD in server environment.'
+            });
+        }
+
+        const subject = `Tupou Order Request ${orderNumber ? `- ${orderNumber}` : ''}`.trim();
+        const itemLines = items
+            .map((entry, idx) => `${idx + 1}. ${entry.item} — ${entry.quantity} ${entry.purchaseUnit}`)
+            .join('\n');
+
+        const textBody = [
+            'Tupou Order Request',
+            '',
+            `Requester Name: ${requesterName || 'N/A'}`,
+            `Requested by: ${requesterEmail}`,
+            `Order Number: ${orderNumber || 'N/A'}`,
+            `Supplier: ${supplier}`,
+            '',
+            'Requested Items:',
+            itemLines,
+            `Date Ordered: ${dateOrdered}`,
+            `Expected Delivery: ${expectedDelivery}`,
+            `Notes: ${notes || 'None'}`,
+            '',
+            `Requested at: ${new Date().toISOString()}`
+        ].join('\n');
+
+        const itemRowsHtml = items
+            .map((entry) => `<tr><td style="padding:8px;border:1px solid #eee;">${entry.item}</td><td style="padding:8px;border:1px solid #eee;">${entry.quantity}</td><td style="padding:8px;border:1px solid #eee;">${entry.purchaseUnit}</td></tr>`)
+            .join('');
+
+        const htmlBody = `
+            <div style="font-family:Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px;border:1px solid #eee;border-radius:8px;">
+                <h2 style="margin-top:0;color:#ff4d94;">Tupou Order Request</h2>
+                <p>A new order request has been submitted.</p>
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Requester Name</td><td style="padding:8px;border:1px solid #eee;">${requesterName || 'N/A'}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Requested by</td><td style="padding:8px;border:1px solid #eee;">${requesterEmail}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Order Number</td><td style="padding:8px;border:1px solid #eee;">${orderNumber || 'N/A'}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Supplier</td><td style="padding:8px;border:1px solid #eee;">${supplier}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Date Ordered</td><td style="padding:8px;border:1px solid #eee;">${dateOrdered}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Expected Delivery</td><td style="padding:8px;border:1px solid #eee;">${expectedDelivery}</td></tr>
+                    <tr><td style="padding:8px;border:1px solid #eee;font-weight:bold;">Notes</td><td style="padding:8px;border:1px solid #eee;">${notes || 'None'}</td></tr>
+                </table>
+                <h3 style="margin-top:16px;color:#1f4f8a;">Requested Items</h3>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left;padding:8px;border:1px solid #eee;background:#f7f9fc;">Item</th>
+                            <th style="text-align:left;padding:8px;border:1px solid #eee;background:#f7f9fc;">Qty</th>
+                            <th style="text-align:left;padding:8px;border:1px solid #eee;background:#f7f9fc;">Unit</th>
+                        </tr>
+                    </thead>
+                    <tbody>${itemRowsHtml}</tbody>
+                </table>
+                <p style="margin-top:16px;color:#666;font-size:12px;">Sent from IMH at ${new Date().toISOString()}</p>
+            </div>
+        `;
+
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: recipientEmail,
+            replyTo: requesterEmail,
+            subject,
+            text: textBody,
+            html: htmlBody
+        });
+
+        res.json({ success: true, message: 'Order request email sent' });
+    } catch (error) {
+        console.error('Tupou order email error:', error);
+        res.status(500).json({ error: 'Failed to send order request email' });
+    }
+});
+
 // ============= AUTHENTICATION ENDPOINTS =============
 
 // Helper function to sanitize input
@@ -388,6 +747,110 @@ function verifyOwnerCredentials(requesterEmail, requesterPassword, callback) {
             callback(compareErr, false);
         }
     });
+}
+
+function verifyAdminOrOwnerCredentials(requesterEmail, requesterPassword, callback) {
+    const normalizedEmail = sanitizeInput(requesterEmail || '').toLowerCase();
+    if (!normalizedEmail || !requesterPassword) {
+        return callback(null, false, null);
+    }
+
+    db.get('SELECT * FROM users WHERE email = ?', [normalizedEmail], async (err, user) => {
+        if (err) return callback(err, false, null);
+        if (!user) return callback(null, false, null);
+
+        try {
+            const passwordMatch = await bcrypt.compare(requesterPassword, user.passwordHash);
+            const role = String(user.role || '').toLowerCase();
+            const isOwnerUser = Number(user.isOwner) === 1 || normalizedEmail === OWNER_EMAIL;
+            const isAdminUser = isOwnerUser || role === 'admin' || role === 'owner';
+            callback(null, Boolean(passwordMatch && isAdminUser), user);
+        } catch (compareErr) {
+            callback(compareErr, false, null);
+        }
+    });
+}
+
+function validateSupplierIdOrReject(req, res) {
+    const supplierId = sanitizeSupplierId(req.body.supplierId || req.params.supplierId || '');
+    if (!supplierId || !ORDERING_SUPPLIER_IDS.has(supplierId)) {
+        res.status(400).json({ error: 'Valid supplierId is required' });
+        return null;
+    }
+    return supplierId;
+}
+
+function normalizeSupplierProfileRow(row) {
+    if (!row) return null;
+    const logoUrl = row.logoStorageKey ? buildSupplierLogoUrl(row.logoStorageKey) : (row.logoUrl || '');
+    return {
+        supplierId: row.supplierId,
+        displayName: row.displayName || '',
+        logoUrl,
+        logoStorageKey: row.logoStorageKey || '',
+        portalUrl: row.portalUrl || '',
+        importantNotes: row.importantNotes || '',
+        orderingMethod: row.orderingMethod || '',
+        preferredUnits: row.preferredUnits || '',
+        deliveryFrequency: row.deliveryFrequency || '',
+        accountManager: row.accountManager || '',
+        phone: row.phone || '',
+        email: row.email || '',
+        lastOrdered: row.lastOrdered || '',
+        documentsUploaded: Number(row.documentsUploaded) === 1,
+        logoUpdatedAt: row.logoUpdatedAt || '',
+        logoUpdatedBy: row.logoUpdatedBy || '',
+        lastUpdated: row.lastUpdated || '',
+        updatedBy: row.updatedBy || ''
+    };
+}
+
+function upsertSupplierProfile(supplierId, patch, updatedBy, callback) {
+    db.run(
+        `INSERT INTO supplier_profiles (
+            supplierId, displayName, logoUrl, logoStorageKey, portalUrl, importantNotes,
+            orderingMethod, preferredUnits, deliveryFrequency, accountManager, phone, email,
+            lastOrdered, documentsUploaded, logoUpdatedAt, logoUpdatedBy, lastUpdated, updatedBy
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+         ON CONFLICT(supplierId) DO UPDATE SET
+            displayName = excluded.displayName,
+            logoUrl = excluded.logoUrl,
+            logoStorageKey = excluded.logoStorageKey,
+            portalUrl = excluded.portalUrl,
+            importantNotes = excluded.importantNotes,
+            orderingMethod = excluded.orderingMethod,
+            preferredUnits = excluded.preferredUnits,
+            deliveryFrequency = excluded.deliveryFrequency,
+            accountManager = excluded.accountManager,
+            phone = excluded.phone,
+            email = excluded.email,
+            lastOrdered = excluded.lastOrdered,
+            documentsUploaded = excluded.documentsUploaded,
+            logoUpdatedAt = COALESCE(excluded.logoUpdatedAt, supplier_profiles.logoUpdatedAt),
+            logoUpdatedBy = COALESCE(excluded.logoUpdatedBy, supplier_profiles.logoUpdatedBy),
+            lastUpdated = CURRENT_TIMESTAMP,
+            updatedBy = excluded.updatedBy`,
+        [
+            supplierId,
+            patch.displayName || '',
+            patch.logoUrl || '',
+            patch.logoStorageKey || '',
+            patch.portalUrl || '',
+            patch.importantNotes || '',
+            patch.orderingMethod || '',
+            patch.preferredUnits || '',
+            patch.deliveryFrequency || '',
+            patch.accountManager || '',
+            patch.phone || '',
+            patch.email || '',
+            patch.lastOrdered || '',
+            Number(patch.documentsUploaded) === 1 ? 1 : 0,
+            patch.logoUpdatedAt || null,
+            patch.logoUpdatedBy || null,
+            updatedBy || ''
+        ],
+        callback
+    );
 }
 
 function recordSignupAttempt(email, fullName, status = 'pending', lastError = '') {
@@ -895,6 +1358,196 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     }
 });
 
+app.get('/api/suppliers/profiles', (req, res) => {
+    db.all('SELECT * FROM supplier_profiles ORDER BY supplierId ASC', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ success: true, profiles: (rows || []).map(normalizeSupplierProfileRow) });
+    });
+});
+
+app.get('/api/suppliers/profiles/:supplierId', (req, res) => {
+    const supplierId = sanitizeSupplierId(req.params.supplierId || '');
+    if (!supplierId || !ORDERING_SUPPLIER_IDS.has(supplierId)) {
+        return res.status(400).json({ error: 'Valid supplierId is required' });
+    }
+
+    db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (err, row) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!row) return res.json({ success: true, profile: null });
+        res.json({ success: true, profile: normalizeSupplierProfileRow(row) });
+    });
+});
+
+app.post('/api/suppliers/profile/update', async (req, res) => {
+    try {
+        const supplierId = validateSupplierIdOrReject(req, res);
+        if (!supplierId) return;
+
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+        verifyAdminOrOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only Admin or Owner can update supplier settings' });
+
+            db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (readErr, existing) => {
+                if (readErr) return res.status(500).json({ error: 'Database error' });
+
+                const merged = {
+                    supplierId,
+                    displayName: sanitizeInput(req.body.displayName || existing?.displayName || ''),
+                    logoUrl: sanitizeInput(req.body.logoUrl || existing?.logoUrl || ''),
+                    logoStorageKey: existing?.logoStorageKey || '',
+                    portalUrl: sanitizeInput(req.body.portalUrl || existing?.portalUrl || ''),
+                    importantNotes: String(req.body.importantNotes || existing?.importantNotes || '').trim(),
+                    orderingMethod: sanitizeInput(req.body.orderingMethod || existing?.orderingMethod || ''),
+                    preferredUnits: sanitizeInput(req.body.preferredUnits || existing?.preferredUnits || ''),
+                    deliveryFrequency: sanitizeInput(req.body.deliveryFrequency || existing?.deliveryFrequency || ''),
+                    accountManager: sanitizeInput(req.body.accountManager || existing?.accountManager || ''),
+                    phone: sanitizeInput(req.body.phone || existing?.phone || ''),
+                    email: sanitizeInput(req.body.email || existing?.email || ''),
+                    lastOrdered: sanitizeInput(req.body.lastOrdered || existing?.lastOrdered || ''),
+                    documentsUploaded: Number(req.body.documentsUploaded) === 1 ? 1 : (Number(existing?.documentsUploaded) === 1 ? 1 : 0),
+                    logoUpdatedAt: existing?.logoUpdatedAt || null,
+                    logoUpdatedBy: existing?.logoUpdatedBy || null
+                };
+
+                upsertSupplierProfile(supplierId, merged, requesterEmail, (saveErr) => {
+                    if (saveErr) return res.status(500).json({ error: 'Database error' });
+
+                    db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (postErr, row) => {
+                        if (postErr) return res.status(500).json({ error: 'Database error' });
+                        res.json({ success: true, profile: normalizeSupplierProfileRow(row) });
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Supplier profile update error:', error);
+        res.status(500).json({ error: 'Failed to update supplier profile' });
+    }
+});
+
+app.post('/api/suppliers/logo/upload', uploadSupplierLogo.single('logo'), async (req, res) => {
+    try {
+        const supplierId = validateSupplierIdOrReject(req, res);
+        if (!supplierId) {
+            safeUnlink(req.file?.path);
+            return;
+        }
+
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+
+        verifyAdminOrOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) {
+                safeUnlink(req.file?.path);
+                return res.status(500).json({ error: 'Database error' });
+            }
+            if (!allowed) {
+                safeUnlink(req.file?.path);
+                return res.status(403).json({ error: 'Only Admin or Owner can upload supplier logos' });
+            }
+            if (!req.file) {
+                return res.status(400).json({ error: 'Logo file is required' });
+            }
+
+            db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (readErr, existing) => {
+                if (readErr) {
+                    safeUnlink(req.file?.path);
+                    return res.status(500).json({ error: 'Database error' });
+                }
+
+                const previousPath = resolveLogoPathFromStorageKey(existing?.logoStorageKey || '');
+                const storageKey = path.basename(req.file.filename || '');
+                const logoUrl = buildSupplierLogoUrl(storageKey);
+
+                const merged = {
+                    supplierId,
+                    displayName: sanitizeInput(req.body.displayName || existing?.displayName || ''),
+                    logoUrl,
+                    logoStorageKey: storageKey,
+                    portalUrl: sanitizeInput(req.body.portalUrl || existing?.portalUrl || ''),
+                    importantNotes: String(req.body.importantNotes || existing?.importantNotes || '').trim(),
+                    orderingMethod: sanitizeInput(req.body.orderingMethod || existing?.orderingMethod || ''),
+                    preferredUnits: sanitizeInput(req.body.preferredUnits || existing?.preferredUnits || ''),
+                    deliveryFrequency: sanitizeInput(req.body.deliveryFrequency || existing?.deliveryFrequency || ''),
+                    accountManager: sanitizeInput(req.body.accountManager || existing?.accountManager || ''),
+                    phone: sanitizeInput(req.body.phone || existing?.phone || ''),
+                    email: sanitizeInput(req.body.email || existing?.email || ''),
+                    lastOrdered: sanitizeInput(req.body.lastOrdered || existing?.lastOrdered || ''),
+                    documentsUploaded: Number(existing?.documentsUploaded) === 1 ? 1 : 0,
+                    logoUpdatedAt: new Date().toISOString(),
+                    logoUpdatedBy: requesterEmail
+                };
+
+                upsertSupplierProfile(supplierId, merged, requesterEmail, (saveErr) => {
+                    if (saveErr) {
+                        safeUnlink(req.file?.path);
+                        return res.status(500).json({ error: 'Database error' });
+                    }
+
+                    if (previousPath && previousPath !== req.file.path) {
+                        safeUnlink(previousPath);
+                    }
+
+                    db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (postErr, row) => {
+                        if (postErr) return res.status(500).json({ error: 'Database error' });
+                        res.json({ success: true, profile: normalizeSupplierProfileRow(row) });
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        safeUnlink(req.file?.path);
+        console.error('Supplier logo upload error:', error);
+        res.status(500).json({ error: 'Failed to upload supplier logo' });
+    }
+});
+
+app.post('/api/suppliers/logo/remove', async (req, res) => {
+    try {
+        const supplierId = validateSupplierIdOrReject(req, res);
+        if (!supplierId) return;
+
+        const requesterEmail = sanitizeInput(req.body.requesterEmail || '').toLowerCase();
+        const requesterPassword = req.body.requesterPassword || '';
+
+        verifyAdminOrOwnerCredentials(requesterEmail, requesterPassword, (verifyErr, allowed) => {
+            if (verifyErr) return res.status(500).json({ error: 'Database error' });
+            if (!allowed) return res.status(403).json({ error: 'Only Admin or Owner can remove supplier logos' });
+
+            db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (readErr, existing) => {
+                if (readErr) return res.status(500).json({ error: 'Database error' });
+                if (!existing) return res.status(404).json({ error: 'Supplier profile not found' });
+
+                const previousPath = resolveLogoPathFromStorageKey(existing.logoStorageKey || '');
+                const merged = {
+                    ...existing,
+                    logoUrl: '',
+                    logoStorageKey: '',
+                    logoUpdatedAt: new Date().toISOString(),
+                    logoUpdatedBy: requesterEmail
+                };
+
+                upsertSupplierProfile(supplierId, merged, requesterEmail, (saveErr) => {
+                    if (saveErr) return res.status(500).json({ error: 'Database error' });
+
+                    safeUnlink(previousPath);
+                    db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (postErr, row) => {
+                        if (postErr) return res.status(500).json({ error: 'Database error' });
+                        res.json({ success: true, profile: normalizeSupplierProfileRow(row) });
+                    });
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Supplier logo remove error:', error);
+        res.status(500).json({ error: 'Failed to remove supplier logo' });
+    }
+});
+
+app.use('/supplier-logos', express.static(supplierStorageRoot));
+
 // Serve static files (CSS, JS, etc.)
 app.use(express.static(path.join(__dirname)));
 
@@ -910,6 +1563,11 @@ app.get('/api/health', (req, res) => {
         timestamp: new Date().toISOString(),
         version: '2.0-secure'
     });
+});
+
+// SPA fallback routes for location-specific client navigation.
+app.get(['/locations/*', '/dashboard', '/ordering', '/stock', '/deliveries', '/movement', '/expiry', '/waste', '/reports', '/tasks', '/settings', '/help', '/profile'], (req, res) => {
+    res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 // Start server

@@ -1417,8 +1417,15 @@
             align-items: start;
         }
         
-        .stock-right-sidebar {
+        .stock-right-sidebar,
+        .stock-right-sidebar *,
+        [class*="workflow"],
+        [class*="stock-workflow"],
+        [class*="quick-order"],
+        [class*="ordering-flow"] {
             display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
         }
 
         .stock-main-column {
@@ -5040,58 +5047,43 @@
         // Update time every minute
         setInterval(updateTimeAndGreeting, 60000);
         
-        // Remove workflow panel immediately
+        // Remove workflow panel immediately and keep it hidden even if the page re-renders
         function removeQuickOrderingWorkflow() {
-            console.log('removeQuickOrderingWorkflow called');
-            
-            // Method 1: Find and remove the stock-right-sidebar entirely (most direct approach)
-            const sidebar = document.querySelector('.stock-right-sidebar');
-            if (sidebar) {
-                console.log('Found stock-right-sidebar, removing it');
-                sidebar.style.display = 'none !important';
-                sidebar.remove();
-                return;
-            }
-            
-            // Method 2: Find element containing "Quick Ordering Workflow" text (correct casing)
-            const allElements = document.querySelectorAll('*');
-            for (let el of allElements) {
-                if (el.textContent && el.textContent.includes('Quick Ordering Workflow')) {
-                    console.log('Found workflow panel element:', el.tagName, el.className);
-                    // Found it - remove the closest significant container
-                    let toRemove = el;
-                    while (toRemove && toRemove.parentElement) {
-                        const parent = toRemove.parentElement;
-                        // Stop when we hit main content area or body
-                        if (parent.tagName === 'BODY' || parent.tagName === 'HTML' || parent.tagName === 'MAIN' || parent.tagName === 'SECTION') break;
-                        toRemove = parent;
-                    }
-                    toRemove.style.display = 'none !important';
-                    toRemove.remove();
-                    console.log('Removed workflow panel');
-                    return;
-                }
-            }
-            
-            // Method 3: Look for divs with workflow classes
-            const workflowDivs = document.querySelectorAll('[class*="workflow"], [class*="stock-workflow"]');
-            if (workflowDivs.length > 0) {
-                console.log('Found workflow divs:', workflowDivs.length);
-                // Find the parent container (stock-panel or stock-right-sidebar) and remove it
-                let el = workflowDivs[0];
-                while (el && el.parentElement) {
-                    if (el.className && (el.className.includes('sidebar') || el.className.includes('stock-right'))) {
-                        console.log('Removing workflow parent:', el.className);
-                        el.style.display = 'none !important';
-                        el.remove();
-                        return;
-                    }
-                    el = el.parentElement;
-                }
-                // If specific class not found, remove the button's top-level container
+            localStorage.setItem('quickOrderingWorkflowLocked', '1');
+            document.documentElement.classList.add('quick-ordering-hidden');
+            document.documentElement.setAttribute('data-quick-ordering-hidden', 'true');
+
+            const selectors = [
+                '.stock-right-sidebar',
+                '[class*="workflow"]',
+                '[class*="stock-workflow"]',
+                '[class*="quick-order"]',
+                '[class*="ordering-flow"]'
+            ];
+
+            const matches = document.querySelectorAll(selectors.join(','));
+            matches.forEach((el) => {
+                if (el.closest('.app > aside')) return;
+                if (el.getAttribute('data-quick-flow-hidden') === 'true') return;
+
+                el.setAttribute('data-quick-flow-hidden', 'true');
                 el.style.display = 'none !important';
+                el.style.visibility = 'hidden !important';
+                el.style.pointerEvents = 'none !important';
                 el.remove();
-            }
+            });
+
+            document.querySelectorAll('*').forEach((el) => {
+                if (!el.textContent) return;
+                if (/quick ordering workflow|quick flow|ordering workflow/i.test(el.textContent)) {
+                    if (el.closest('.app > aside')) return;
+                    el.setAttribute('data-quick-flow-hidden', 'true');
+                    el.style.display = 'none !important';
+                    el.style.visibility = 'hidden !important';
+                    el.style.pointerEvents = 'none !important';
+                    el.remove();
+                }
+            });
         }
         
         // Set up continuous monitoring with MutationObserver to catch dynamically added workflow panels
@@ -5099,8 +5091,11 @@
             const observer = new MutationObserver(() => {
                 removeQuickOrderingWorkflow();
             });
+
+            const monitorTarget = document.body || document.documentElement;
+            if (!monitorTarget || !(monitorTarget instanceof Node)) return;
             
-            observer.observe(document.body, {
+            observer.observe(monitorTarget, {
                 childList: true,
                 subtree: true,
                 attributes: true,
@@ -5111,6 +5106,11 @@
         }
         
         function initializeApp() {
+            const locked = localStorage.getItem('quickOrderingWorkflowLocked') === '1';
+            if (locked) {
+                document.documentElement.classList.add('quick-ordering-hidden');
+                document.documentElement.setAttribute('data-quick-ordering-hidden', 'true');
+            }
             // Remove the workflow panel immediately on app init
             removeQuickOrderingWorkflow();
             // Start monitoring for dynamically added workflow panels
@@ -6989,15 +6989,15 @@
             renderStockRows(filtered);
             renderStockCatalog(filtered);
             renderStockItemDetailsPanel();
-            renderStockSidebarSections();
-            removeQuickOrderingWorkflow();
-            enforceStockSidebarLock();
+            // renderStockSidebarSections();
+            //removeQuickOrderingWorkflow();
+           // enforceStockSidebarLock();
         }
         
         function renderMovementTable() {
             const filtered = movements || [];
             const html = filtered.length > 0 ? filtered.map((m, idx) => `
-                <tr>
+ ssss               <tr>
                     <td>${m['Date'] || '—'}</td>
                     <td>${m['Item'] || '—'}</td>
                     <td>${m['Quantity'] || '—'}</td>
