@@ -1505,7 +1505,7 @@
                     <button class="navbtn" onclick="toggleDropdown(this)">⊙ Locations ▼</button>
                     <div class="nested-menu">
                         <button class="nested-item" style="font-weight:bold;color:var(--pink);cursor:default;padding:8px 12px;">Lounge</button>
-                        <button class="nested-item" onclick="showPage('stock'); setNavActive(this)">▢ Stock (Rebuilding)</button>
+                        <button class="nested-item" onclick="showPage('dashboard'); setNavActive(this)">▢ Stock (Offline)</button>
                         <div style="position:relative;">
                             <button class="nested-item" onclick="toggleSubDropdown(this)" style="display:flex;justify-content:space-between;align-items:center;width:100%;">
                                 <span>⊕ Ordering</span>
@@ -1632,7 +1632,7 @@
                                 </div>
                             </div>
                             <div class="health-note">All items active</div>
-                            <a class="widget-link" onclick="showPage('stock')">View stock →</a>
+                            <a class="widget-link" onclick="showPage('dashboard')">Stock offline →</a>
                         </div>
                         <div class="widget">
                             <div class="widget-title" style="color:#d9534f;font-weight:700;">⚠️ EXPIRY ALERT</div>
@@ -1659,7 +1659,7 @@
                         <div class="widget">
                             <div class="widget-title">Total Items</div>
                             <div class="widget-content" id="totalItemsCount">59</div>
-                            <a class="widget-link" onclick="showPage('stock')">View all →</a>
+                            <a class="widget-link" onclick="showPage('dashboard')">View all →</a>
                         </div>
                         <div class="widget">
                             <div class="widget-title">Expired & Expiring Soon</div>
@@ -1692,7 +1692,7 @@
                             <div class="widget-title">Quick Actions</div>
                             <button class="btn-primary" style="width:100%;margin-top:12px" onclick="showAddMovementModal()">↔ Quick Add Movement</button>
                             <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showAddDeliveryModal()">□ Quick Add Delivery</button>
-                            <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showPage('stock')">🔍 Search Inventory</button>
+                            <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showPage('dashboard')">🔍 Inventory Offline</button>
                             <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showPage('ordering')">⊕ Create Order</button>
                         </div>
                     </div>
@@ -1712,7 +1712,7 @@
             <section id="stock" class="page">
                 <div class="page-content">
                     <div class="top">
-                        <h1>Stock List</h1>
+                        <h1>Stock Rebuild</h1>
                         <div class="sub">This page is temporarily offline while we rebuild it from scratch</div>
                     </div>
                     <div class="widget" style="margin-top:16px;">
@@ -2406,8 +2406,7 @@
             
             // Show results in a modal or update relevant table
             if (results.inventory.length > 0) {
-                showPage('stock');
-                // Highlight results
+                showPage('dashboard');
             }
         }
         
