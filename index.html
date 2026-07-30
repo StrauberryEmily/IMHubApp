@@ -1505,7 +1505,7 @@
                     <button class="navbtn" onclick="toggleDropdown(this)">⊙ Locations ▼</button>
                     <div class="nested-menu">
                         <button class="nested-item" style="font-weight:bold;color:var(--pink);cursor:default;padding:8px 12px;">Lounge</button>
-                        <button class="nested-item" onclick="showPage('stock'); setNavActive(this)">▢ Stock</button>
+                        <button class="nested-item" onclick="showPage('stock'); setNavActive(this)">▢ Stock (Rebuilding)</button>
                         <div style="position:relative;">
                             <button class="nested-item" onclick="toggleSubDropdown(this)" style="display:flex;justify-content:space-between;align-items:center;width:100%;">
                                 <span>⊕ Ordering</span>
@@ -1713,45 +1713,18 @@
                 <div class="page-content">
                     <div class="top">
                         <h1>Stock List</h1>
-                        <div class="sub">Click any cell to edit data - scroll right to see more columns</div>
+                        <div class="sub">This page is temporarily offline while we rebuild it from scratch</div>
                     </div>
-                    <div class="toolbar">
-                        <input id="search" class="search" placeholder="Search..." oninput="renderTable()">
-                        <select class="filter-dropdown" id="categoryFilter" onchange="renderTable()">
-                            <option value="">All Categories</option>
-                        </select>
-                        <select class="filter-dropdown" id="supplierFilter" onchange="renderTable()">
-                            <option value="">All Suppliers</option>
-                        </select>
-                        <!-- Export moved to Settings -->
-                        <button class="btn primary" onclick="showAddStockModal()" style="margin-left: auto;">➕ Add Item</button>
-                    </div>
-                    <div class="tablewrap" style="overflow-x: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Item Name</th>
-                                    <th>Category</th>
-                                    <th>Subcategory</th>
-                                    <th>Purchase Unit</th>
-                                    <th>Pack Qty</th>
-                                    <th>Pack Unit</th>
-                                    <th>Supplier</th>
-                                    <th>Location</th>
-                                    <th>Total Stock</th>
-                                    <th>Min Stock</th>
-                                    <th>Ideal Stock</th>
-                                    <th>Reorder Point</th>
-                                    <th>Track Expiry</th>
-                                    <th>Track Waste</th>
-                                    <th>Active</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody id="stockRows">
-                                <tr><td colspan="16" style="text-align:center;padding:30px">Loading...</td></tr>
-                            </tbody>
-                        </table>
+                    <div class="widget" style="margin-top:16px;">
+                        <div class="widget-title">Stock Module Reset</div>
+                        <p style="margin:8px 0 0;color:var(--muted);line-height:1.5;">
+                            The previous stock page and its live data connections have been disabled.
+                            Ordering pages remain active while the new stock page is rebuilt.
+                        </p>
+                        <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
+                            <button class="btn secondary" onclick="showPage('ordering')">Go To Ordering</button>
+                            <button class="btn secondary" onclick="showPage('dashboard')">Go To Dashboard</button>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -3826,7 +3799,7 @@
         }
         
         async function loadAllData() {
-            await loadInventoryData();
+            inventory = [];
             await loadDeliveriesData();
             await loadExpiryData();
             await loadMovementsData();
@@ -4137,11 +4110,15 @@
         function populateFilters() {
             const cats = [...new Set(inventory.map(i => i.category).filter(c => c))];
             const catSel = document.getElementById('categoryFilter');
-            cats.forEach(c => { if (!Array.from(catSel.options).some(o => o.value === c)) { const opt = document.createElement('option'); opt.value = c; opt.textContent = c; catSel.appendChild(opt); } });
+            if (catSel) {
+                cats.forEach(c => { if (!Array.from(catSel.options).some(o => o.value === c)) { const opt = document.createElement('option'); opt.value = c; opt.textContent = c; catSel.appendChild(opt); } });
+            }
 
             const sups = [...new Set(inventory.map(i => i.supplier).filter(s => s))];
             const supSel = document.getElementById('supplierFilter');
-            sups.forEach(s => { if (!Array.from(supSel.options).some(o => o.value === s)) { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; supSel.appendChild(opt); } });
+            if (supSel) {
+                sups.forEach(s => { if (!Array.from(supSel.options).some(o => o.value === s)) { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; supSel.appendChild(opt); } });
+            }
 
             const dSups = [...new Set(deliveries.map(d => d['Supplier']).filter(s => s))];
             const dSel = document.getElementById('supplierFilter2');
@@ -4329,11 +4306,7 @@
         // ============= MODALS FOR ADDING ITEMS =============
         
         function showAddStockModal() {
-            const modal = document.getElementById('addStockModal');
-            if (modal) {
-                if (modal.parentElement !== document.body) document.body.appendChild(modal);
-                modal.classList.add('show');
-            }
+            alert('Stock page is currently being rebuilt. Add Item is temporarily disabled.');
         }
         
         function closeModal(modalId) {
@@ -4548,42 +4521,7 @@
         }
         
         function addNewStockItem() {
-            const itemName = document.getElementById('newItemName').value.trim();
-            const category = document.getElementById('newItemCategory').value;
-            
-            if (!itemName || !category) {
-                alert('Please fill in Item Name and Category.');
-                return;
-            }
-            
-            const newItem = {
-                'Item Name': itemName,
-                'Category': category,
-                'Subcategory': document.getElementById('newItemSubcategory').value.trim(),
-                'Purchase Unit': document.getElementById('newItemPurchaseUnit').value.trim(),
-                'Pack Qty': document.getElementById('newItemPackQty').value || '',
-                'Pack Unit': document.getElementById('newItemPackUnit').value.trim(),
-                'Supplier': document.getElementById('newItemSupplier').value,
-                'Location': document.getElementById('newItemLocation').value.trim(),
-                'Total Stock': document.getElementById('newItemTotalStock').value || '0',
-                'Minimun Stock': document.getElementById('newItemMinStock').value || '0',
-                'Ideal Stock': document.getElementById('newItemIdealStock').value || '0',
-                'Reorder Point': document.getElementById('newItemReorderPoint').value || '0',
-                'Track Expiry': document.getElementById('newItemTrackExpiry').value,
-                'Track Waste': document.getElementById('newItemTrackWaste').value,
-                'Notes': document.getElementById('newItemNotes').value.trim()
-            };
-            
-            // Add to inventory data
-            inventory.push(newItem);
-            localStorage.setItem('inventory', JSON.stringify(inventory));
-            
-            alert('✅ Stock item added successfully!');
-            closeModal('addStockModal');
-            renderTable();
-            
-            // Clear form
-            document.getElementById('addStockModal').querySelectorAll('input, textarea, select').forEach(el => el.value = '');
+            alert('Stock page is currently being rebuilt. New stock item creation is disabled.');
         }
         
 
@@ -4860,15 +4798,9 @@
         }
         
         function renderTable() {
-            const q = document.getElementById('search').value.toLowerCase();
-            const cf = document.getElementById('categoryFilter').value;
-            const sf = document.getElementById('supplierFilter').value;
-            const filtered = inventory.filter(i => (i.name.toLowerCase().includes(q) || i.category.toLowerCase().includes(q) || i.subcategory.toLowerCase().includes(q)) && (!cf || i.category === cf) && (!sf || i.supplier === sf));
-            const html = filtered.map((i, idx) => {
-                const idx2 = inventory.indexOf(i);
-                return `<tr><td>${i.name}</td><td>${i.category}</td><td>${i.subcategory}</td><td>${i.purchaseUnit}</td><td>${i.packQty}</td><td>${i.packUnit}</td><td>${i.supplier}</td><td>${i.location}</td><td>${i.totalStock}</td><td>${i.minStock}</td><td>${i.idealStock}</td><td>${i.reorderPoint}</td><td>${i.trackExpiry}</td><td>${i.trackWaste}</td><td>${i.active}</td><td>${i.notes}</td><td style="text-align:center;"><button onclick="openEditModal('inventory', ${idx2})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td></tr>`;
-            }).join('');
-            document.getElementById('stockRows').innerHTML = html || '<tr><td colspan="17" style="text-align:center;padding:20px;color:var(--muted)">No items</td></tr>';
+            const stockRows = document.getElementById('stockRows');
+            if (!stockRows) return;
+            stockRows.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:20px;color:var(--muted)">Stock page is being rebuilt</td></tr>';
         }
         
         function renderMovementTable() {
