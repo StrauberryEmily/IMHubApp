@@ -295,6 +295,12 @@
             justify-content: center !important;
             align-items: center !important;
         }
+
+        /* Stock add modal is intentionally disabled during stock rebuild. */
+        #addStockModal {
+            display: none !important;
+            pointer-events: none !important;
+        }
         
         #addStockModal.show,
         #addDeliveryModal.show,
@@ -478,6 +484,9 @@
             align-items: center;
             flex-shrink: 0;
             height: 70px;
+            position: sticky;
+            top: 0;
+            z-index: 1100;
         }
         
         .topbar-left {
@@ -1264,7 +1273,7 @@
                     </div>
                 </div>
                 <div style="display:flex;gap:8px;">
-                    <button class="btn primary" onclick="addNewStockItem()" style="flex:1;">➕ Add Item</button>
+                    <button class="btn primary" onclick="showStockOfflineNotice()" style="flex:1;">Stock Offline</button>
                     <button class="btn-secondary" onclick="closeModal('addStockModal')" style="flex:1;">Cancel</button>
                 </div>
             </div>
@@ -1505,7 +1514,7 @@
                     <button class="navbtn" onclick="toggleDropdown(this)">⊙ Locations ▼</button>
                     <div class="nested-menu">
                         <button class="nested-item" style="font-weight:bold;color:var(--pink);cursor:default;padding:8px 12px;">Lounge</button>
-                        <button class="nested-item" onclick="showPage('dashboard'); setNavActive(this)">▢ Stock (Offline)</button>
+                        <button class="nested-item" onclick="showPage('stock'); setNavActive(this)">▢ Stock (Rebuild)</button>
                         <div style="position:relative;">
                             <button class="nested-item" onclick="toggleSubDropdown(this)" style="display:flex;justify-content:space-between;align-items:center;width:100%;">
                                 <span>⊕ Ordering</span>
@@ -1632,7 +1641,7 @@
                                 </div>
                             </div>
                             <div class="health-note">All items active</div>
-                            <a class="widget-link" onclick="showPage('dashboard')">Stock offline →</a>
+                            <a class="widget-link" onclick="showStockOfflineNotice()">Stock rebuild →</a>
                         </div>
                         <div class="widget">
                             <div class="widget-title" style="color:#d9534f;font-weight:700;">⚠️ EXPIRY ALERT</div>
@@ -1659,7 +1668,7 @@
                         <div class="widget">
                             <div class="widget-title">Total Items</div>
                             <div class="widget-content" id="totalItemsCount">59</div>
-                            <a class="widget-link" onclick="showPage('dashboard')">View all →</a>
+                            <a class="widget-link" onclick="showStockOfflineNotice()">View all →</a>
                         </div>
                         <div class="widget">
                             <div class="widget-title">Expired & Expiring Soon</div>
@@ -1692,7 +1701,7 @@
                             <div class="widget-title">Quick Actions</div>
                             <button class="btn-primary" style="width:100%;margin-top:12px" onclick="showAddMovementModal()">↔ Quick Add Movement</button>
                             <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showAddDeliveryModal()">□ Quick Add Delivery</button>
-                            <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showPage('dashboard')">🔍 Inventory Offline</button>
+                            <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showStockOfflineNotice()">🔍 Stock Rebuild</button>
                             <button class="btn-primary" style="width:100%;margin-top:8px" onclick="showPage('ordering')">⊕ Create Order</button>
                         </div>
                     </div>
@@ -1713,18 +1722,26 @@
                 <div class="page-content">
                     <div class="top">
                         <h1>Stock Rebuild</h1>
-                        <div class="sub">This page is temporarily offline while we rebuild it from scratch</div>
+                        <div class="sub">Stock page is temporarily offline while it is rebuilt</div>
                     </div>
                     <div class="widget" style="margin-top:16px;">
-                        <div class="widget-title">Stock Module Reset</div>
+                        <div class="widget-title">Stock Module Offline</div>
                         <p style="margin:8px 0 0;color:var(--muted);line-height:1.5;">
-                            The previous stock page and its live data connections have been disabled.
-                            Ordering pages remain active while the new stock page is rebuilt.
+                            The old Stock List page has been removed and is being rebuilt from scratch.
+                            Ordering and other pages continue to run normally.
                         </p>
                         <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;">
-                            <button class="btn secondary" onclick="showPage('ordering')">Go To Ordering</button>
-                            <button class="btn secondary" onclick="showPage('dashboard')">Go To Dashboard</button>
+                            <button class="btn-secondary" onclick="showPage('ordering')">Go To Ordering</button>
+                            <button class="btn-secondary" onclick="showPage('home')">Go To Dashboard</button>
                         </div>
+                    </div>
+
+                    <!-- Keep hidden stock controls to prevent legacy JS from breaking while stock is rebuilt -->
+                    <div style="display:none;">
+                        <input id="search" class="search" value="">
+                        <select id="categoryFilter"><option value="">All Categories</option></select>
+                        <select id="supplierFilter"><option value="">All Suppliers</option></select>
+                        <table><tbody id="stockRows"><tr><td colspan="17">Stock rebuild in progress</td></tr></tbody></table>
                     </div>
                 </div>
             </section>
@@ -2406,7 +2423,7 @@
             
             // Show results in a modal or update relevant table
             if (results.inventory.length > 0) {
-                showPage('dashboard');
+                showStockOfflineNotice();
             }
         }
         
@@ -3798,7 +3815,7 @@
         }
         
         async function loadAllData() {
-            inventory = [];
+            await loadInventoryData();
             await loadDeliveriesData();
             await loadExpiryData();
             await loadMovementsData();
@@ -4109,15 +4126,11 @@
         function populateFilters() {
             const cats = [...new Set(inventory.map(i => i.category).filter(c => c))];
             const catSel = document.getElementById('categoryFilter');
-            if (catSel) {
-                cats.forEach(c => { if (!Array.from(catSel.options).some(o => o.value === c)) { const opt = document.createElement('option'); opt.value = c; opt.textContent = c; catSel.appendChild(opt); } });
-            }
+            cats.forEach(c => { if (!Array.from(catSel.options).some(o => o.value === c)) { const opt = document.createElement('option'); opt.value = c; opt.textContent = c; catSel.appendChild(opt); } });
 
             const sups = [...new Set(inventory.map(i => i.supplier).filter(s => s))];
             const supSel = document.getElementById('supplierFilter');
-            if (supSel) {
-                sups.forEach(s => { if (!Array.from(supSel.options).some(o => o.value === s)) { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; supSel.appendChild(opt); } });
-            }
+            sups.forEach(s => { if (!Array.from(supSel.options).some(o => o.value === s)) { const opt = document.createElement('option'); opt.value = s; opt.textContent = s; supSel.appendChild(opt); } });
 
             const dSups = [...new Set(deliveries.map(d => d['Supplier']).filter(s => s))];
             const dSel = document.getElementById('supplierFilter2');
@@ -4303,9 +4316,13 @@
         }
         
         // ============= MODALS FOR ADDING ITEMS =============
+
+        function showStockOfflineNotice() {
+            alert('Stock page is currently offline while it is being rebuilt.');
+        }
         
         function showAddStockModal() {
-            alert('Stock page is currently being rebuilt. Add Item is temporarily disabled.');
+            showStockOfflineNotice();
         }
         
         function closeModal(modalId) {
@@ -4520,7 +4537,7 @@
         }
         
         function addNewStockItem() {
-            alert('Stock page is currently being rebuilt. New stock item creation is disabled.');
+            showStockOfflineNotice();
         }
         
 
@@ -4797,9 +4814,9 @@
         }
         
         function renderTable() {
-            const stockRows = document.getElementById('stockRows');
-            if (!stockRows) return;
-            stockRows.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:20px;color:var(--muted)">Stock page is being rebuilt</td></tr>';
+            const rowsEl = document.getElementById('stockRows');
+            if (!rowsEl) return;
+            rowsEl.innerHTML = '<tr><td colspan="17" style="text-align:center;padding:20px;color:var(--muted)">Stock rebuild in progress</td></tr>';
         }
         
         function renderMovementTable() {
