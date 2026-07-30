@@ -281,6 +281,20 @@
         .nested-submenu.open {
             display: flex;
         }
+        /* Force-hide legacy stock right sidebar blocks if stale markup appears */
+        aside.stock-right-sidebar,
+        .stock-right-sidebar {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            width: 0 !important;
+            max-width: 0 !important;
+            min-width: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            overflow: hidden !important;
+        }
         
         /* Modal Styles */
         #addStockModal, #addDeliveryModal, #addMovementModal, #addExpiryModal, #addWasteModal, #addTaskQuickModal {
@@ -2974,8 +2988,27 @@
         }
         
         function closeAllModals() {
-            document.getElementById('changeEmailModal').style.display = 'none';
-            document.getElementById('changePasswordModal').style.display = 'none';
+            [
+                'changeEmailModal',
+                'changePasswordModal',
+                'setPasswordModal',
+                'deviceTrustModal',
+                'addStockModal',
+                'addDeliveryModal',
+                'addMovementModal',
+                'addExpiryModal',
+                'addTaskQuickModal',
+                'addWasteModal'
+            ].forEach((id) => {
+                const modal = document.getElementById(id);
+                if (!modal) return;
+                modal.classList.remove('show');
+                modal.style.display = 'none';
+            });
+
+            const editModal = document.getElementById('editItemModal');
+            if (editModal) editModal.remove();
+
             document.getElementById('modalBackdrop').style.display = 'none';
         }
         
@@ -3270,6 +3303,8 @@
             
             // Enforce role-based UI
             enforceAdminUI();
+            removeLegacyStockRightSidebar();
+            startLegacyStockSidebarBlocker();
             
             setInterval(loadAllData, 30000);
             // Refresh expiry countdown every minute for real-time updates
@@ -3571,6 +3606,24 @@
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.classList.remove('show');
+                modal.style.display = 'none';
+            }
+
+            const backdrop = document.getElementById('modalBackdrop');
+            if (backdrop) {
+                const openModalIds = [
+                    'changeEmailModal',
+                    'changePasswordModal',
+                    'setPasswordModal',
+                    'deviceTrustModal'
+                ];
+                const hasOpenAuthModal = openModalIds.some((id) => {
+                    const el = document.getElementById(id);
+                    return !!el && el.style.display !== 'none';
+                });
+                if (!hasOpenAuthModal) {
+                    backdrop.style.display = 'none';
+                }
             }
         }
         
@@ -4447,6 +4500,34 @@
                 overlay.classList.add('visible');
             }
         }
+            let legacyStockSidebarObserver = null;
+
+            function removeLegacyStockRightSidebar() {
+                document.querySelectorAll('aside.stock-right-sidebar, .stock-right-sidebar').forEach((el) => el.remove());
+
+                document.querySelectorAll('#stockRecentOrdersList').forEach((el) => {
+                    const host = el.closest('aside.stock-right-sidebar, .stock-right-sidebar');
+                    if (host) host.remove();
+                });
+
+                const workflowTitles = Array.from(document.querySelectorAll('.stock-sidebar-card-title, div'))
+                    .filter((el) => (el.textContent || '').trim() === 'Quick Ordering Workflow');
+
+                workflowTitles.forEach((titleEl) => {
+                    const host = titleEl.closest('aside, .stock-panel, .stock-right-sidebar');
+                    if (!host) return;
+                    const isLegacyStockPanel = host.classList?.contains('stock-right-sidebar') || !!host.querySelector('.stock-workflow-step');
+                    if (isLegacyStockPanel) host.remove();
+                });
+            }
+
+            function startLegacyStockSidebarBlocker() {
+                if (legacyStockSidebarObserver || !document.body) return;
+                legacyStockSidebarObserver = new MutationObserver(() => {
+                    removeLegacyStockRightSidebar();
+                });
+                legacyStockSidebarObserver.observe(document.body, { childList: true, subtree: true });
+            }
         
         // Close sidebar when a nav item is tapped on mobile
         function showPage(pageId) {
@@ -4454,6 +4535,7 @@
             document.getElementById(pageId).classList.add('active');
             document.getElementById('alertsPanel').classList.remove('open');
             currentPage = pageId; // Update current page tracking
+            removeLegacyStockRightSidebar();
             if (window.innerWidth <= 768) {
                 document.querySelector('aside').classList.remove('mobile-open');
                 document.getElementById('sidebarOverlay').classList.remove('visible');
