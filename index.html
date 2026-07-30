@@ -1416,40 +1416,10 @@
             gap: 16px;
             align-items: start;
         }
-        
-        .stock-right-sidebar,
-        .stock-right-sidebar *,
-        [class*="workflow"],
-        [class*="stock-workflow"],
-        [class*="quick-order"],
-        [class*="ordering-flow"] {
-            display: none !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-        }
 
         .stock-main-column {
             display: grid;
             gap: 12px;
-        }
-
-        .stock-right-sidebar {
-            display: none !important;
-            visibility: hidden !important;
-            width: 0 !important;
-            height: 0 !important;
-            overflow: hidden !important;
-            position: absolute !important;
-            left: -9999px !important;
-            pointer-events: none !important;
-        }
-
-        /* Lock: sidebar must never show stock detail popup panel again. */
-        .stock-right-sidebar #stockDetailPanel,
-        .stock-right-sidebar .stock-product-panel {
-            display: none !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
         }
 
         .stock-panel {
@@ -5047,75 +5017,7 @@
         // Update time every minute
         setInterval(updateTimeAndGreeting, 60000);
         
-        // Remove workflow panel immediately and keep it hidden even if the page re-renders
-        function removeQuickOrderingWorkflow() {
-            localStorage.setItem('quickOrderingWorkflowLocked', '1');
-            document.documentElement.classList.add('quick-ordering-hidden');
-            document.documentElement.setAttribute('data-quick-ordering-hidden', 'true');
-
-            const selectors = [
-                '.stock-right-sidebar',
-                '[class*="workflow"]',
-                '[class*="stock-workflow"]',
-                '[class*="quick-order"]',
-                '[class*="ordering-flow"]'
-            ];
-
-            const matches = document.querySelectorAll(selectors.join(','));
-            matches.forEach((el) => {
-                if (el.closest('.app > aside')) return;
-                if (el.getAttribute('data-quick-flow-hidden') === 'true') return;
-
-                el.setAttribute('data-quick-flow-hidden', 'true');
-                el.style.display = 'none !important';
-                el.style.visibility = 'hidden !important';
-                el.style.pointerEvents = 'none !important';
-                el.remove();
-            });
-
-            document.querySelectorAll('*').forEach((el) => {
-                if (!el.textContent) return;
-                if (/quick ordering workflow|quick flow|ordering workflow/i.test(el.textContent)) {
-                    if (el.closest('.app > aside')) return;
-                    el.setAttribute('data-quick-flow-hidden', 'true');
-                    el.style.display = 'none !important';
-                    el.style.visibility = 'hidden !important';
-                    el.style.pointerEvents = 'none !important';
-                    el.remove();
-                }
-            });
-        }
-        
-        // Set up continuous monitoring with MutationObserver to catch dynamically added workflow panels
-        function setupWorkflowPanelMonitor() {
-            const observer = new MutationObserver(() => {
-                removeQuickOrderingWorkflow();
-            });
-
-            const monitorTarget = document.body || document.documentElement;
-            if (!monitorTarget || !(monitorTarget instanceof Node)) return;
-            
-            observer.observe(monitorTarget, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                characterData: true
-            });
-            
-            console.log('Workflow panel monitor started');
-        }
-        
         function initializeApp() {
-            const locked = localStorage.getItem('quickOrderingWorkflowLocked') === '1';
-            if (locked) {
-                document.documentElement.classList.add('quick-ordering-hidden');
-                document.documentElement.setAttribute('data-quick-ordering-hidden', 'true');
-            }
-            // Remove the workflow panel immediately on app init
-            removeQuickOrderingWorkflow();
-            // Start monitoring for dynamically added workflow panels
-            setupWorkflowPanelMonitor();
-            
             // Load user data
             const userName = localStorage.getItem('currentUserName');
             const userJobTitle = localStorage.getItem('currentUserJobTitle');
@@ -6706,15 +6608,6 @@
             renderStockItemDetailsPanel();
         }
 
-        function enforceStockSidebarLock() {
-            const sidebar = document.querySelector('.stock-right-sidebar');
-            if (!sidebar) return;
-
-            sidebar.querySelectorAll('#stockDetailPanel, .stock-product-panel').forEach((node) => {
-                node.remove();
-            });
-        }
-
         function renderStockItemDetailsPanel() {
             const panel = document.getElementById('stockDetailPanel');
             if (!panel) return;
@@ -6778,48 +6671,6 @@
                     <button type="button" onclick="stockActionArchive('${item.id}')">Archive Item</button>
                 </div>
             `;
-        }
-
-        function renderStockSidebarSections() {
-            const ordersList = document.getElementById('stockRecentOrdersList');
-            const updated = document.getElementById('stockPageLastUpdated');
-            if (!ordersList) return;
-
-            const recent = [...(orders || [])]
-                .sort((a, b) => new Date(b.createdAt || b.dateOrdered || 0) - new Date(a.createdAt || a.dateOrdered || 0))
-                .slice(0, 4);
-
-            if (!recent.length) {
-                ordersList.innerHTML = '<div style="padding:8px 0;font-size:12px;color:var(--muted);">No recent orders yet.</div>';
-            } else {
-                ordersList.innerHTML = recent.map((order) => {
-                    const status = String(order.status || 'Pending');
-                    let bg = '#fff3cd';
-                    let color = '#7a5a00';
-                    if (status.toLowerCase() === 'approved' || status.toLowerCase() === 'received') {
-                        bg = '#e9f7ef';
-                        color = '#1b8f4a';
-                    }
-                    if (status.toLowerCase() === 'declined') {
-                        bg = '#fdecec';
-                        color = '#c62828';
-                    }
-                    return `
-                        <div class="stock-order-row">
-                            <div>
-                                <div style="font-weight:700;color:var(--text);">${order.supplier || 'Supplier'}</div>
-                                <div style="font-size:11px;color:var(--muted);">${order.dateOrdered || 'Date not set'}</div>
-                            </div>
-                            <span class="stock-order-status" style="background:${bg};color:${color};">${status}</span>
-                            <div style="font-size:11px;color:var(--muted);text-align:right;">${order.quantity || 0} ${order.purchaseUnit || ''}</div>
-                        </div>
-                    `;
-                }).join('');
-            }
-
-            if (updated) {
-                updated.textContent = new Date().toLocaleString();
-            }
         }
 
         function renderStockRows(filteredItems) {
@@ -6989,9 +6840,6 @@
             renderStockRows(filtered);
             renderStockCatalog(filtered);
             renderStockItemDetailsPanel();
-            // renderStockSidebarSections();
-            //removeQuickOrderingWorkflow();
-           // enforceStockSidebarLock();
         }
         
         function renderMovementTable() {
@@ -7505,12 +7353,6 @@
             if (pageId === 'tasks') { renderTasksList(); }
             if (pageId === 'stock') {
                 renderStockPage();
-                removeQuickOrderingWorkflow();
-                // Set up repeated checks to catch any workflow panels added after render
-                setTimeout(() => { removeQuickOrderingWorkflow(); }, 100);
-                setTimeout(() => { removeQuickOrderingWorkflow(); }, 500);
-                setTimeout(() => { removeQuickOrderingWorkflow(); }, 1000);
-                enforceStockSidebarLock();
             }
             if (pageId === 'ordering') { renderOrderingOverview(); }
             if (pageId === 'home') {
