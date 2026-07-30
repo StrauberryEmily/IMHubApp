@@ -1427,9 +1427,14 @@
         }
 
         .stock-right-sidebar {
-            display: grid;
-            gap: 12px;
-            align-content: start;
+            display: none !important;
+            visibility: hidden !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            position: absolute !important;
+            left: -9999px !important;
+            pointer-events: none !important;
         }
 
         /* Lock: sidebar must never show stock detail popup panel again. */
