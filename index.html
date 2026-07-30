@@ -1440,6 +1440,22 @@
             pointer-events: none !important;
         }
 
+        /* Hide any workflow or overlay panels */
+        [class*="workflow"],
+        [id*="workflow"],
+        [class*="Workflow"],
+        [id*="Workflow"],
+        [class*="WORKFLOW"],
+        [id*="WORKFLOW"],
+        [class*="quick-order"],
+        [id*="quick-order"],
+        [class*="quickOrder"],
+        [id*="quickOrder"] {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+
         .stock-panel {
             background: white;
             border: 1px solid var(--border);
