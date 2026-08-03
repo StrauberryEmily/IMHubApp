@@ -282,9 +282,14 @@
         }
 
         .navbtn-locations {
-            border-color: rgba(255, 77, 148, 0.55);
-            background: linear-gradient(90deg, rgba(255, 77, 148, 0.18) 0%, rgba(255, 77, 148, 0.08) 100%);
-            box-shadow: inset 0 0 0 1px rgba(255, 77, 148, 0.16), 0 0 14px rgba(255, 77, 148, 0.24);
+            border-color: transparent;
+            background: none;
+        }
+
+        .navbtn-locations.active {
+            border-color: rgba(255, 77, 148, 0.9);
+            background: linear-gradient(90deg, rgba(255, 77, 148, 0.88) 0%, rgba(181, 52, 125, 0.78) 100%);
+            box-shadow: 0 8px 24px rgba(255, 77, 148, 0.34);
         }
         
         .dropdown {
@@ -2509,7 +2514,7 @@
                 <div class="dropdown">
                     <button id="locationsDropdown" class="navbtn navbtn-locations" onclick="toggleDropdown(this)">📍 Locations ▼</button>
                     <div class="nested-menu">
-                        <button class="nested-item" style="font-weight:bold;color:var(--pink);cursor:default;padding:8px 12px;">📍 Lounge</button>
+                        <button class="nested-item" onclick="showPage('home'); setNavActive(this)">📍 Lounge</button>
                         <div style="position:relative;margin-top:4px;">
                             <div style="display:flex;align-items:center;gap:4px;">
                                 <button id="orderingLabelButton" class="nested-item" onclick="openOrderingOverview()" style="flex:1;text-align:left;">🛒 Ordering / Suppliers</button>
@@ -6174,10 +6179,10 @@
                     return;
                 }
 
-                const requesterEmailInput = prompt('Enter your email so Tupou can reply to this order request:');
-                const requesterEmail = (requesterEmailInput || '').trim().toLowerCase();
-                if (!requesterEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
-                    alert('Please enter a valid email address to send Tupou the order request.');
+                const requesterEmail = (localStorage.getItem('currentUser') || '').trim().toLowerCase();
+                const requesterName = localStorage.getItem('currentUserName') || 'Staff';
+                if (!requesterEmail) {
+                    alert('You must be logged in to send a Tupou order request.');
                     return;
                 }
 
@@ -6186,6 +6191,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         requesterEmail,
+                        requesterName,
                         orderNumber: order.orderNumber,
                         supplier: order.supplier,
                         items: pendingItems,
@@ -7290,7 +7296,7 @@
         }
         
         function setNavActive(btn) {
-            document.querySelectorAll('.navbtn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.navbtn, .nested-item').forEach(b => b.classList.remove('active'));
             if (btn) btn.classList.add('active');
         }
 
@@ -8710,14 +8716,10 @@
                 return;
             }
 
-            const requesterName = localStorage.getItem('currentUserName') || localStorage.getItem('userName') || 'Unknown user';
-            let requesterEmail = (localStorage.getItem('currentUser') || '').trim().toLowerCase();
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
-                requesterEmail = (prompt('Enter your email for this Tupou request:') || '').trim().toLowerCase();
-            }
-
-            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requesterEmail)) {
-                alert('A valid submitter email is required to send the order request.');
+            const requesterName = localStorage.getItem('currentUserName') || localStorage.getItem('userName') || 'Staff';
+            const requesterEmail = (localStorage.getItem('currentUser') || '').trim().toLowerCase();
+            if (!requesterEmail) {
+                alert('You must be logged in to send a Tupou order request.');
                 return;
             }
 

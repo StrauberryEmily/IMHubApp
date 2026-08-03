@@ -120,6 +120,7 @@ function validatePassword(password) {
 }
 
 // ============= DATABASE INITIALIZATION =============
+const OWNER_EMAIL = 'emilyjreed01@gmail.com';
 const dbPath = path.join(__dirname, 'users.db');
 const db = new sqlite3.Database(dbPath, (err) => {
     if (err) {
@@ -129,23 +130,34 @@ const db = new sqlite3.Database(dbPath, (err) => {
     console.log('✅ Database connected at', dbPath);
 });
 
-// Create users table if it doesn't exist
-db.run(`
-    CREATE TABLE IF NOT EXISTS users (
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT UNIQUE NOT NULL,
         passwordHash TEXT NOT NULL,
         recoveryCode TEXT NOT NULL,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-`, (err) => {
-    if (err) console.error('Table creation error:', err);
-});
+    )`, (err) => { if (err) console.error('users table error:', err); });
 
-// Create recovery tokens table for password reset
-db.run(`
-    CREATE TABLE IF NOT EXISTS recovery_tokens (
+    db.run(`CREATE TABLE IF NOT EXISTS approved_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        approvedBy TEXT NOT NULL,
+        createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => { if (err) console.error('approved_emails table error:', err); });
+
+    db.run(`CREATE TABLE IF NOT EXISTS signup_attempts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE NOT NULL,
+        fullName TEXT,
+        attemptCount INTEGER DEFAULT 1,
+        status TEXT DEFAULT 'pending',
+        lastError TEXT,
+        lastAttemptAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => { if (err) console.error('signup_attempts table error:', err); });
+
+    db.run(`CREATE TABLE IF NOT EXISTS recovery_tokens (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL,
         token TEXT UNIQUE NOT NULL,
@@ -153,9 +165,23 @@ db.run(`
         expiresAt DATETIME NOT NULL,
         createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (email) REFERENCES users(email)
-    );
-`, (err) => {
-    if (err) console.error('Table creation error:', err);
+    )`, (err) => { if (err) console.error('recovery_tokens table error:', err); });
+
+    // Seed owner account if OWNER_PASSWORD env var is set and account doesn't exist
+    const ownerPassword = process.env.OWNER_PASSWORD;
+    if (ownerPassword) {
+        db.get('SELECT id FROM users WHERE email = ?', [OWNER_EMAIL], async (err, row) => {
+            if (!row) {
+                const hash = await bcrypt.hash(ownerPassword, 10);
+                const code = Math.floor(100000 + Math.random() * 900000).toString();
+                db.run('INSERT INTO users (email, passwordHash, recoveryCode) VALUES (?, ?, ?)',
+                    [OWNER_EMAIL, hash, code],
+                    (e) => { if (!e) console.log('✅ Owner account seeded'); });
+                db.run('INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)',
+                    [OWNER_EMAIL, 'system'], () => {});
+            }
+        });
+    }
 });
 // For Gmail: Use App Password (not your regular password)
 // Generate at: https://myaccount.google.com/apppasswords
@@ -292,64 +318,80 @@ app.post('/api/verify-reset-token', (req, res) => {
 
 // ============= AUTHENTICATION ENDPOINTS =============
 
-// Helper function to sanitize input
+// Helper to sanitize input
 function sanitizeInput(input) {
     if (typeof input !== 'string') return '';
     return input.trim().replace(/[<>\"']/g, '');
 }
 
-// Helper function to generate 6-digit recovery code
 function generateRecoveryCode() {
-    return Math.floor(Math.random() * 900000) + 100000;
+    return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// User Registration
+// Verify owner credentials (used by approval endpoints)
+async function verifyOwner(requesterEmail, requesterPassword) {
+    return new Promise((resolve) => {
+        if ((requesterEmail || '').toLowerCase() !== OWNER_EMAIL) return resolve(false);
+        db.get('SELECT passwordHash FROM users WHERE email = ?', [OWNER_EMAIL], async (err, row) => {
+            if (err || !row) return resolve(false);
+            const ok = await bcrypt.compare(requesterPassword || '', row.passwordHash);
+            resolve(ok);
+        });
+    });
+}
+
+// User Registration — requires pre-approved email (owner is always allowed)
 app.post('/api/register', loginLimiter, async (req, res) => {
     try {
         const email = sanitizeInput(req.body.email || '').toLowerCase();
         const password = req.body.password || '';
         const fullName = sanitizeInput(req.body.fullName || '');
 
-        // Validation
         if (!email || !password || !fullName) {
             return res.status(400).json({ error: 'Email, password, and name are required' });
         }
-
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return res.status(400).json({ error: 'Invalid email format' });
         }
-
         if (password.length < 8 || !/\d/.test(password) || !/[A-Z]/.test(password)) {
             return res.status(400).json({ error: 'Password must be 8+ characters with 1 number and 1 uppercase letter' });
         }
 
-        // Check if user already exists
         db.get('SELECT * FROM users WHERE email = ?', [email], async (err, existing) => {
-            if (err) {
-                return res.status(500).json({ error: 'Database error' });
-            }
-            
-            if (existing) {
-                return res.status(400).json({ error: 'Email already registered' });
+            if (err) return res.status(500).json({ error: 'Database error' });
+            if (existing) return res.status(400).json({ error: 'Email already registered' });
+
+            // Owner always allowed; everyone else needs pre-approval
+            if (email !== OWNER_EMAIL) {
+                const approved = await new Promise((resolve) => {
+                    db.get('SELECT id FROM approved_emails WHERE email = ?', [email], (e, row) => resolve(!!row));
+                });
+                if (!approved) {
+                    // Log the attempt
+                    db.run(`INSERT INTO signup_attempts (email, fullName, attemptCount, status, lastError, lastAttemptAt)
+                        VALUES (?, ?, 1, 'pending', 'Not pre-approved', CURRENT_TIMESTAMP)
+                        ON CONFLICT(email) DO UPDATE SET
+                            attemptCount = attemptCount + 1,
+                            fullName = excluded.fullName,
+                            lastAttemptAt = CURRENT_TIMESTAMP`,
+                        [email, fullName], () => {});
+                    return res.status(403).json({ error: 'This email has not been approved for registration. Contact the owner.' });
+                }
             }
 
-            // Hash password
             const passwordHash = await bcrypt.hash(password, 10);
             const recoveryCode = generateRecoveryCode();
 
-            // Store user in database
-            db.run(
-                'INSERT INTO users (email, passwordHash, recoveryCode) VALUES (?, ?, ?)',
+            db.run('INSERT INTO users (email, passwordHash, recoveryCode) VALUES (?, ?, ?)',
                 [email, passwordHash, recoveryCode],
                 function(err) {
-                    if (err) {
-                        return res.status(500).json({ error: 'Failed to create account' });
-                    }
-
+                    if (err) return res.status(500).json({ error: 'Failed to create account' });
+                    // Mark attempt as registered if exists
+                    db.run("UPDATE signup_attempts SET status='registered' WHERE email=?", [email], () => {});
                     res.json({
                         success: true,
                         message: 'Account created successfully',
-                        recoveryCode: recoveryCode.toString(),
+                        recoveryCode: recoveryCode,
                         email: email,
                         fullName: fullName
                     });
@@ -400,6 +442,288 @@ app.post('/api/login', loginLimiter, async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
+    }
+});
+
+// Start password recovery - verify email exists and return hint
+app.post('/api/password-recovery/start', loginLimiter, (req, res) => {
+    const email = sanitizeInput(req.body.email || '').toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(400).json({ error: 'Invalid email format' });
+    }
+    db.get('SELECT email FROM users WHERE email = ?', [email], (err, user) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!user) return res.status(404).json({ error: 'No account found with that email' });
+        res.json({ success: true, message: 'Enter your 6-digit recovery code to reset your password.' });
+    });
+});
+
+// Reset password using recovery code
+app.post('/api/password-recovery/reset', loginLimiter, async (req, res) => {
+    const email = sanitizeInput(req.body.email || '').toLowerCase();
+    const recoveryCode = sanitizeInput(req.body.recoveryCode || '');
+    const newPassword = req.body.newPassword || '';
+
+    if (!email || !recoveryCode || !newPassword) {
+        return res.status(400).json({ error: 'Email, recovery code, and new password are required' });
+    }
+    if (!/^[0-9]{6}$/.test(recoveryCode)) {
+        return res.status(400).json({ error: 'Recovery code must be 6 digits' });
+    }
+    if (newPassword.length < 8 || !/\d/.test(newPassword) || !/[A-Z]/.test(newPassword)) {
+        return res.status(400).json({ error: 'Password must be 8+ characters with 1 number and 1 uppercase letter' });
+    }
+
+    db.get('SELECT * FROM users WHERE email = ?', [email], async (err, user) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        if (!user) return res.status(404).json({ error: 'No account found with that email' });
+        if (String(user.recoveryCode) !== String(recoveryCode)) {
+            return res.status(401).json({ error: 'Invalid recovery code' });
+        }
+
+        const newHash = await bcrypt.hash(newPassword, 10);
+        const newRecoveryCode = Math.floor(100000 + Math.random() * 900000).toString();
+
+        db.run('UPDATE users SET passwordHash = ?, recoveryCode = ? WHERE email = ?',
+            [newHash, newRecoveryCode, email],
+            (err) => {
+                if (err) return res.status(500).json({ error: 'Failed to reset password' });
+                res.json({ success: true, recoveryCode: newRecoveryCode });
+            }
+        );
+    });
+});
+
+// ============= APPROVAL ENDPOINTS =============
+
+// List approved emails
+app.post('/api/approvals/list', async (req, res) => {
+    const { requesterEmail, requesterPassword } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    db.all('SELECT email, approvedBy, createdAt FROM approved_emails ORDER BY createdAt DESC', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ approvals: rows || [] });
+    });
+});
+
+// List signup attempts
+app.post('/api/approvals/attempts', async (req, res) => {
+    const { requesterEmail, requesterPassword } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    db.all('SELECT * FROM signup_attempts ORDER BY lastAttemptAt DESC', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ attempts: rows || [] });
+    });
+});
+
+// Approve a signup attempt (adds to approved_emails)
+app.post('/api/approvals/attempts/approve', async (req, res) => {
+    const { requesterEmail, requesterPassword, email } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    const target = sanitizeInput(email || '').toLowerCase();
+    if (!target) return res.status(400).json({ error: 'Email required' });
+    db.run('INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)', [target, OWNER_EMAIL], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        db.run("UPDATE signup_attempts SET status='approved' WHERE email=?", [target], () => {});
+        res.json({ success: true });
+    });
+});
+
+// Deny a signup attempt
+app.post('/api/approvals/attempts/deny', async (req, res) => {
+    const { requesterEmail, requesterPassword, email, reason } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    const target = sanitizeInput(email || '').toLowerCase();
+    if (!target) return res.status(400).json({ error: 'Email required' });
+    db.run("UPDATE signup_attempts SET status='denied', lastError=? WHERE email=?", [sanitizeInput(reason || 'Denied'), target], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ success: true });
+    });
+});
+
+// Pre-approve an email
+app.post('/api/approvals/add', async (req, res) => {
+    const { requesterEmail, requesterPassword, email } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    const target = sanitizeInput(email || '').toLowerCase();
+    if (!target || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(target)) return res.status(400).json({ error: 'Valid email required' });
+    db.run('INSERT OR IGNORE INTO approved_emails (email, approvedBy) VALUES (?, ?)', [target, OWNER_EMAIL], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ success: true });
+    });
+});
+
+// Remove approval
+app.post('/api/approvals/remove', async (req, res) => {
+    const { requesterEmail, requesterPassword, email } = req.body || {};
+    if (!await verifyOwner(requesterEmail, requesterPassword)) return res.status(401).json({ error: 'Invalid owner credentials' });
+    const target = sanitizeInput(email || '').toLowerCase();
+    if (target === OWNER_EMAIL) return res.status(400).json({ error: 'Cannot remove owner approval' });
+    db.run('DELETE FROM approved_emails WHERE email = ?', [target], (err) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ success: true });
+    });
+});
+
+// ============= SUPPLIER PROFILES =============
+const multer = require('multer');
+const uploadStorage = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
+
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS supplier_profiles (
+        supplierId TEXT PRIMARY KEY,
+        logoUrl TEXT,
+        portalUrl TEXT,
+        externalUrl TEXT,
+        importantNotes TEXT,
+        quickInfo TEXT,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => { if (err) console.error('supplier_profiles table error:', err); });
+});
+
+// GET all supplier profiles
+app.get('/api/suppliers/profiles', (req, res) => {
+    db.all('SELECT * FROM supplier_profiles', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ profiles: (rows || []).map(r => ({ ...r, quickInfo: r.quickInfo ? JSON.parse(r.quickInfo) : {} })) });
+    });
+});
+
+// POST update a supplier profile (text fields)
+app.post('/api/suppliers/profile/update', async (req, res) => {
+    const { supplierId, requesterEmail, requesterPassword, logoUrl, portalUrl, externalUrl, importantNotes, quickInfo } = req.body || {};
+    if (!supplierId) return res.status(400).json({ error: 'supplierId required' });
+    if (!await verifyOwner(requesterEmail, requesterPassword) && (requesterEmail || '').toLowerCase() !== OWNER_EMAIL) {
+        const isAdmin = await new Promise(resolve => {
+            db.get('SELECT email FROM users WHERE email = ?', [(requesterEmail || '').toLowerCase()], async (err, row) => {
+                if (!row) return resolve(false);
+                const pw = await bcrypt.compare(requesterPassword || '', (await new Promise(r2 => db.get('SELECT passwordHash FROM users WHERE email=?', [row.email], (e, u) => r2(u?.passwordHash || '')))));
+                resolve(pw);
+            });
+        });
+        if (!isAdmin) return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const quickInfoStr = quickInfo ? JSON.stringify(quickInfo) : null;
+    db.run(`INSERT INTO supplier_profiles (supplierId, logoUrl, portalUrl, externalUrl, importantNotes, quickInfo, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(supplierId) DO UPDATE SET
+            logoUrl = COALESCE(excluded.logoUrl, logoUrl),
+            portalUrl = COALESCE(excluded.portalUrl, portalUrl),
+            externalUrl = COALESCE(excluded.externalUrl, externalUrl),
+            importantNotes = COALESCE(excluded.importantNotes, importantNotes),
+            quickInfo = COALESCE(excluded.quickInfo, quickInfo),
+            updatedAt = CURRENT_TIMESTAMP`,
+        [supplierId, logoUrl || null, portalUrl || null, externalUrl || null, importantNotes || null, quickInfoStr],
+        function(err) {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (e, row) => {
+                const profile = row ? { ...row, quickInfo: row.quickInfo ? JSON.parse(row.quickInfo) : {} } : { supplierId };
+                res.json({ success: true, profile });
+            });
+        }
+    );
+});
+
+// POST upload supplier logo (multipart)
+app.post('/api/suppliers/logo/upload', uploadStorage.single('logo'), async (req, res) => {
+    const { supplierId, requesterEmail, requesterPassword } = req.body || {};
+    if (!supplierId || !req.file) return res.status(400).json({ error: 'supplierId and logo file required' });
+    const validOwner = await verifyOwner(requesterEmail, requesterPassword);
+    if (!validOwner) {
+        const validUser = await new Promise(resolve => {
+            db.get('SELECT passwordHash FROM users WHERE email = ?', [(requesterEmail || '').toLowerCase()], async (err, row) => {
+                if (!row) return resolve(false);
+                resolve(await bcrypt.compare(requesterPassword || '', row.passwordHash));
+            });
+        });
+        if (!validUser) return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    db.run(`INSERT INTO supplier_profiles (supplierId, logoUrl, updatedAt) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(supplierId) DO UPDATE SET logoUrl = excluded.logoUrl, updatedAt = CURRENT_TIMESTAMP`,
+        [supplierId, b64],
+        function(err) {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            db.get('SELECT * FROM supplier_profiles WHERE supplierId = ?', [supplierId], (e, row) => {
+                const profile = row ? { ...row, quickInfo: row.quickInfo ? JSON.parse(row.quickInfo) : {} } : { supplierId, logoUrl: b64 };
+                res.json({ success: true, profile });
+            });
+        }
+    );
+});
+
+// Tupou order request email
+app.post('/api/orders/tupou-request', emailLimiter, async (req, res) => {
+    const { requesterEmail, requesterName, recipientEmail, orderNumber, supplier, items, dateOrdered, expectedDelivery, notes } = req.body || {};
+
+    if (!requesterEmail || !supplier || !items) {
+        return res.status(400).json({ error: 'Missing required order details' });
+    }
+
+    const sendTo = recipientEmail || process.env.TUPOU_EMAIL || process.env.EMAIL_USER;
+    if (!sendTo) {
+        return res.status(500).json({ error: 'Tupou email address not configured. Set TUPOU_EMAIL in environment variables.' });
+    }
+
+    const displayName = requesterName || requesterEmail;
+
+    const itemRows = (Array.isArray(items) ? items : [items]).map(i =>
+        `<tr><td style="padding:8px;border:1px solid #eee;">${i.item || i}</td><td style="padding:8px;border:1px solid #eee;">${i.quantity || ''}</td><td style="padding:8px;border:1px solid #eee;">${i.purchaseUnit || ''}</td></tr>`
+    ).join('');
+
+    const html = `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+            <div style="background:#ff4d94;padding:16px 20px;border-radius:8px 8px 0 0;">
+                <h1 style="color:white;margin:0;font-size:20px;">◇ IMH Order Request</h1>
+            </div>
+            <div style="border:1px solid #eee;border-top:none;padding:20px;border-radius:0 0 8px 8px;">
+                <p>Hi Tupou,</p>
+                <p>A new order request has been submitted by <strong>${displayName}</strong>.</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                    <tr style="background:#f5f5f5;">
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Order #</th>
+                        <td style="padding:8px;border:1px solid #eee;">${orderNumber || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Supplier</th>
+                        <td style="padding:8px;border:1px solid #eee;">${supplier}</td>
+                    </tr>
+                    <tr style="background:#f5f5f5;">
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Date Ordered</th>
+                        <td style="padding:8px;border:1px solid #eee;">${dateOrdered || 'N/A'}</td>
+                    </tr>
+                    <tr>
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Expected Delivery</th>
+                        <td style="padding:8px;border:1px solid #eee;">${expectedDelivery || 'N/A'}</td>
+                    </tr>
+                    ${notes ? `<tr style="background:#f5f5f5;"><th style="padding:8px;border:1px solid #eee;text-align:left;">Notes</th><td style="padding:8px;border:1px solid #eee;">${notes}</td></tr>` : ''}
+                </table>
+                <h3 style="margin-bottom:8px;">Items Requested</h3>
+                <table style="width:100%;border-collapse:collapse;">
+                    <tr style="background:#ff4d94;color:white;">
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Item</th>
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Quantity</th>
+                        <th style="padding:8px;border:1px solid #eee;text-align:left;">Unit</th>
+                    </tr>
+                    ${itemRows}
+                </table>
+                <p style="margin-top:20px;color:#666;font-size:13px;">Please reply to this email or contact <a href="mailto:${requesterEmail}">${requesterEmail}</a> to confirm the order.</p>
+                <p style="color:#666;font-size:12px;border-top:1px solid #eee;padding-top:12px;margin-top:20px;">IMH Inventory Management Hub — Automated Order Request</p>
+            </div>
+        </div>`;
+
+    try {
+        await transporter.sendMail({
+            from: process.env.EMAIL_USER,
+            to: sendTo,
+            replyTo: requesterEmail,
+            subject: `IMH Order Request — ${supplier} — ${orderNumber || new Date().toLocaleDateString()}`,
+            html
+        });
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Tupou email error:', err);
+        res.status(500).json({ error: 'Failed to send email. Check EMAIL_USER and EMAIL_PASSWORD environment variables.' });
     }
 });
 
