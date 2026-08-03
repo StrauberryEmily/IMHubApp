@@ -1,0 +1,4 @@
+🔒 IMH Server running securely on port 3000
+📧 Email service configured: NO (set in .env)
+⚙️  Rate limiting enabled for login and password reset
+✅ Database connected at /Users/emilyreed/new/users.db

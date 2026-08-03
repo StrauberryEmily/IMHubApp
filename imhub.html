@@ -1,0 +1,91 @@
+<aside>
+    <div class="brand" onclick="showPage('home'); location.reload();" style="cursor:pointer;" title="Go to Dashboard">
+        <span class="brand-mark">◇</span>
+        <div class="brand-text">
+            <strong>IMH</strong>
+            <small>Inventory Management Hub</small>
+        </div>
+    </div>
+
+    <div class="nav">
+        <button class="navbtn active" data-page="home" onclick="showPage('home'); setNavActive(this)">⌂ Dashboard</button>
+
+        <div class="dropdown">
+            <button id="locationsDropdown" class="navbtn navbtn-locations" onclick="toggleDropdown(this)">📍 Locations ▼</button>
+            <div class="nested-menu">
+                <button class="nested-item" onclick="openLoungeDashboard()">📍 Lounge</button>
+                <button class="nested-item" onclick="openOrderingOverview()">👥 Suppliers</button>
+                <button class="nested-item" onclick="showPage('stock'); setNavActive(this)">🧾 Stock List</button>
+                <button class="nested-item" onclick="showPage('deliveries'); setNavActive(this)">🚚 Recent Orders/Deliveries</button>
+                <button class="nested-item" onclick="showPage('waste'); setNavActive(this)">🗑 Waste Tracker</button>
+                <button class="nested-item" onclick="showPage('expiry'); setNavActive(this)">⏱ Expiry Trackers</button>
+                <button class="nested-item" onclick="showPage('reports'); setNavActive(this)">📊 Reports</button>
+                <button class="nested-item" onclick="showPage('tasks'); setNavActive(this)">☑ Tasks</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar-footer">
+        <div class="nav" style="margin-top:auto;">
+            <button class="navbtn" data-page="settings" onclick="showPage('settings'); setNavActive(this)">⚙ Settings</button>
+            <button class="navbtn" data-page="help" onclick="showPage('help'); setNavActive(this)">▣ Help</button>
+        </div>
+
+        <div class="profile-section" onclick="showPage('profile'); setNavActive(null)" style="cursor:pointer;">
+            <div class="profile-pic" id="profilePicContainer">
+                <span id="profilePicText">ER</span>
+                <img id="profilePicImg" style="display:none;" src="" alt="Profile">
+            </div>
+            <div class="profile-info">
+                <span id="sidebarUserName">Emily Reed</span>
+                <small id="sidebarJobTitle">Inventory Manager</small>
+            </div>
+        </div>
+    </div>
+</aside>
+
+<div id="addOrderModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:1000;justify-content:center;align-items:center;flex-direction:column;">
+    <div style="background:white;padding:32px;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,0.2);max-width:700px;width:90%;max-height:90vh;overflow-y:auto;">
+        <h3 style="margin:0 0 20px;font-size:20px;">➕ Create New Order</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+            <div>
+                <label>Supplier *</label>
+                <select id="orderSupplierSelect">
+                    <option value="">Select Supplier</option>
+                </select>
+            </div>
+            <div>
+                <label>Item *</label>
+                <select id="orderItemSelect">
+                    <option value="">Select Item</option>
+                </select>
+            </div>
+            <div>
+                <label>Quantity *</label>
+                <input type="number" id="orderQuantityInput">
+            </div>
+            <div>
+                <label>Purchase Unit *</label>
+                <select id="orderUnitSelect">
+                    <option value="">Select Unit</option>
+                </select>
+            </div>
+            <div>
+                <label>Date Ordered *</label>
+                <input type="date" id="orderDateOrdered">
+            </div>
+            <div>
+                <label>Expected Delivery *</label>
+                <input type="date" id="orderExpectedDelivery">
+            </div>
+            <div style="grid-column:1 / -1;">
+                <label>Notes</label>
+                <textarea id="orderNotesInput"></textarea>
+            </div>
+        </div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn primary" onclick="addNewOrder()" style="flex:1;">✅ Create Order</button>
+            <button class="btn-secondary" onclick="closeModal('addOrderModal')" style="flex:1;">Cancel</button>
+        </div>
+    </div>
+</div>
