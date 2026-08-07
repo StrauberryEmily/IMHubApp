@@ -2907,12 +2907,9 @@
             <!-- ORDERING OVERVIEW PAGE -->
             <section id="ordering" class="page">
                 <div class="page-content">
-                    <div class="top" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
-                        <div>
-                            <h1>Ordering</h1>
-                            <div class="sub">Manage supplier ordering, suggested orders and recent order activity.</div>
-                        </div>
-                        <button class="btn-primary" onclick="showOrderingTab('tupou')">New Tupou Order Request</button>
+                    <div class="top">
+                        <h1>Ordering</h1>
+                        <div class="sub">Manage supplier ordering, suggested orders and recent order activity.</div>
                     </div>
 
                     <div id="orderingSummaryWidgets" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-top:16px;"></div>
@@ -2942,6 +2939,12 @@
                                 </table>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Supplier quick-access bar -->
+                    <div style="margin-top:20px;background:white;border:1px solid var(--border);border-radius:12px;padding:16px;">
+                        <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:12px;">Select a supplier to order</div>
+                        <div id="orderingSupplierBar" style="display:flex;gap:12px;overflow-x:auto;padding-bottom:4px;"></div>
                     </div>
                 </div>
             </section>
@@ -7109,8 +7112,9 @@
                 else if (d !== null && d <= 7) allAlerts.push({ priority: 2, icon: '📅', text: `Expiring soon (${d} days): ${item.item || item['Item']}` });
             });
 
-            // Critical: out of stock or below minimum
+            // Critical: out of stock or below minimum (exclude Equipment)
             (inventory || []).forEach(item => {
+                if ((item.category || '').toLowerCase().includes('equipment')) return;
                 const stock = parseNumeric(item.totalStock);
                 const min = parseNumeric(item.minStock);
                 const reorder = parseNumeric(item.reorderPoint);
@@ -8007,7 +8011,7 @@
         }
 
         function getOrderingSuggestions() {
-            const normalized = (inventory || []).map((item) => {
+            const normalized = (inventory || []).filter(item => !(item.category || '').toLowerCase().includes('equipment')).map((item) => {
                 const currentStock = parseNumeric(item.totalStock);
                 const minStock = parseNumeric(item.minStock);
                 const reorderPoint = parseNumeric(item.reorderPoint);
@@ -8407,15 +8411,18 @@
             const summaryEl = document.getElementById('orderingSummaryWidgets');
             if (summaryEl) {
                 summaryEl.innerHTML = [
-                    { label: 'Items Requiring Order', value: suggestions.length },
-                    { label: 'Critical Stock Items', value: outOfStock },
-                    { label: 'Pending Orders', value: pendingOrders },
-                    { label: 'Approved Orders', value: approvedOrders },
-                    { label: 'Deliveries Expected', value: expectedDeliveries }
+                    { label: 'Items Requiring Order', value: suggestions.length, icon: '🗒️', color: '#ff4d94', action: `showPage('stock')` },
+                    { label: 'Critical Stock Items', value: outOfStock, icon: '⚠️', color: '#c62828', action: `showPage('stock')` },
+                    { label: 'Pending Orders', value: pendingOrders, icon: '🕐', color: '#e56a00', action: `showPage('deliveries')` },
+                    { label: 'Approved Orders', value: approvedOrders, icon: '✓', color: '#1b8f4a', action: `showPage('deliveries')` },
+                    { label: 'Deliveries Expected', value: expectedDeliveries, icon: '🚚', color: '#1565c0', action: `showPage('deliveries')` }
                 ].map((item) => `
-                    <div class="widget" style="padding:14px;">
-                        <div style="font-size:12px;color:var(--muted);">${item.label}</div>
-                        <div style="font-size:28px;font-weight:700;color:var(--pink);margin-top:6px;">${item.value}</div>
+                    <div class="widget" style="padding:16px;display:flex;align-items:center;gap:14px;cursor:pointer;" onclick="${item.action}">
+                        <div style="font-size:28px;line-height:1;">${item.icon}</div>
+                        <div>
+                            <div style="font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:0.04em;">${item.label}</div>
+                            <div style="font-size:32px;font-weight:800;color:${item.color};line-height:1.1;margin-top:2px;">${item.value}</div>
+                        </div>
                     </div>
                 `).join('');
             }
@@ -8425,16 +8432,24 @@
                 if (suggestions.length === 0) {
                     suggestedEl.innerHTML = '<div style="padding:10px;color:var(--muted);">No items currently below minimum/reorder levels.</div>';
                 } else {
-                    suggestedEl.innerHTML = suggestions.slice(0, 16).map((row) => `
-                        <div style="border:1px solid var(--border);border-radius:10px;padding:12px;display:grid;gap:8px;">
-                            <div style="font-weight:700;">${row.name}</div>
-                            <div style="font-size:13px;color:var(--muted);">Supplier: ${row.supplier}</div>
-                            <div style="font-size:13px;">Current Stock: <strong>${row.currentStock} ${row.purchaseUnit}</strong></div>
-                            <div style="font-size:13px;">Minimum: <strong>${row.minStock}</strong></div>
-                            <div style="font-size:13px;">Suggested Order: <strong>${row.suggestedOrder} ${row.purchaseUnit}</strong></div>
-                            <button class="btn-secondary" style="width:max-content;" onclick="${row.supplierId ? `showOrderingTab('${row.supplierId}')` : 'void(0)'}">Order from ${row.supplier}</button>
-                        </div>
-                    `).join('');
+                    suggestedEl.innerHTML = suggestions.slice(0, 16).map((row) => {
+                        const supplierProfile = row.supplierId ? getSupplierProfile(row.supplierId) : null;
+                        const logo = supplierProfile?.logoUrl || SUPPLIER_PLACEHOLDER_LOGO;
+                        return `
+                        <div style="border:1px solid var(--border);border-radius:12px;padding:14px;display:grid;grid-template-columns:80px 1fr auto;gap:12px;align-items:center;">
+                            <img src="${logo}" alt="${row.supplier}" style="width:80px;height:60px;object-fit:contain;border-radius:8px;background:#fafafa;border:1px solid var(--border);" />
+                            <div>
+                                <div style="font-weight:700;font-size:15px;">${row.name}</div>
+                                <div style="font-size:12px;color:var(--muted);margin-top:2px;">Supplier: ${row.supplier}</div>
+                                <div style="display:flex;gap:16px;margin-top:8px;font-size:12px;">
+                                    <span>Current Stock <strong>${row.currentStock} ${row.purchaseUnit}</strong></span>
+                                    <span>Minimum <strong>${row.minStock}</strong></span>
+                                    <span style="color:var(--pink);">Suggested Order <strong>${row.suggestedOrder} ${row.purchaseUnit}</strong></span>
+                                </div>
+                            </div>
+                            <button class="btn primary" style="white-space:nowrap;" onclick="${row.supplierId ? `showOrderingTab('${row.supplierId}')` : 'void(0)'}">Order</button>
+                        </div>`;
+                    }).join('') + `<a class="widget-link" style="display:block;margin-top:8px;" onclick="showPage('stock')">View all suggested orders →</a>`;
                 }
             }
 
@@ -8469,6 +8484,20 @@
                         `;
                     }).join('');
                 }
+            }
+
+            // Populate supplier quick-access bar
+            const barEl = document.getElementById('orderingSupplierBar');
+            if (barEl) {
+                barEl.innerHTML = ORDERING_SUPPLIERS.map((supplier) => {
+                    const profile = getSupplierProfile(supplier.id);
+                    const logo = profile.logoUrl || SUPPLIER_PLACEHOLDER_LOGO;
+                    return `
+                        <div onclick="showOrderingTab('${supplier.id}')" style="flex:0 0 auto;display:grid;gap:6px;align-items:center;justify-items:center;cursor:pointer;padding:10px 14px;border:1px solid var(--border);border-radius:10px;background:white;min-width:90px;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--pink)'" onmouseout="this.style.borderColor='var(--border)'">
+                            <img src="${logo}" alt="${supplier.name}" style="width:52px;height:36px;object-fit:contain;" />
+                            <div style="font-size:11px;font-weight:600;color:var(--muted);text-align:center;white-space:nowrap;">${supplier.name}</div>
+                        </div>`;
+                }).join('');
             }
         }
 
