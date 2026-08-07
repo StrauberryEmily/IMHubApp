@@ -603,6 +603,42 @@ db.serialize(() => {
         quickInfo TEXT,
         updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
     )`, (err) => { if (err) console.error('supplier_profiles table error:', err); });
+
+    db.run(`CREATE TABLE IF NOT EXISTS item_photos (
+        itemId TEXT PRIMARY KEY,
+        photoUrl TEXT NOT NULL,
+        updatedAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`, (err) => { if (err) console.error('item_photos table error:', err); });
+});
+
+// GET all item photos
+app.get('/api/items/photos', (req, res) => {
+    db.all('SELECT itemId, photoUrl FROM item_photos', [], (err, rows) => {
+        if (err) return res.status(500).json({ error: 'Database error' });
+        res.json({ photos: rows || [] });
+    });
+});
+
+// POST upload item photo (multipart)
+app.post('/api/items/photo/upload', uploadStorage.single('photo'), async (req, res) => {
+    const { itemId, requesterEmail, requesterPassword } = req.body || {};
+    if (!itemId || !req.file) return res.status(400).json({ error: 'itemId and photo required' });
+    const ok = await new Promise(resolve => {
+        db.get('SELECT passwordHash FROM users WHERE email = ?', [(requesterEmail || '').toLowerCase()], async (err, row) => {
+            if (!row) return resolve(false);
+            resolve(await bcrypt.compare(requesterPassword || '', row.passwordHash));
+        });
+    });
+    if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+    const b64 = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+    db.run(`INSERT INTO item_photos (itemId, photoUrl, updatedAt) VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(itemId) DO UPDATE SET photoUrl = excluded.photoUrl, updatedAt = CURRENT_TIMESTAMP`,
+        [itemId, b64],
+        (err) => {
+            if (err) return res.status(500).json({ error: 'Database error' });
+            res.json({ success: true, itemId, photoUrl: b64 });
+        }
+    );
 });
 
 // GET all supplier profiles

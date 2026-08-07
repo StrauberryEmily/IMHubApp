@@ -3563,6 +3563,7 @@
             '• Contact your account manager for any issues.'
         ].join('\n');
         let supplierProfilesById = {};
+        let itemPhotosById = {};
         let supplierProfilesLoaded = false;
         let supplierStockBreakdownHidden = false;
         let supplierQuickInfoEditMode = false;
@@ -5096,6 +5097,7 @@
             await loadWasteData();
             await loadTasks();
             await loadSupplierProfilesFromApi();
+            await loadItemPhotos();
             loadActivities();
             updateDashboard();
             loadProfileImage();
@@ -6561,6 +6563,7 @@
         }
 
         function getSupplierLogoForStockItem(item) {
+            if (item.id && itemPhotosById[item.id]) return itemPhotosById[item.id];
             const supplierName = String(item.supplier || '').trim();
             const supplier = ORDERING_SUPPLIERS.find((entry) => supplierMatchesItem(entry.name, supplierName));
             if (!supplier) return SUPPLIER_PLACEHOLDER_LOGO;
@@ -6597,7 +6600,12 @@
 
             panel.innerHTML = `
                 <div class="stock-detail-head">
-                    <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" class="stock-thumb" style="width:54px;height:54px;cursor:default;" />
+                    <div style="position:relative;display:inline-block;">
+                        <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" class="stock-thumb" style="width:54px;height:54px;cursor:default;" />
+                        <label title="Upload item photo" style="position:absolute;bottom:-4px;right:-4px;background:var(--pink);color:white;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:10px;cursor:pointer;">
+                            ✎<input type="file" accept="image/*" style="display:none;" onchange="(async (e)=>{ const f=e.target.files[0]; if(!f) return; const url=await uploadItemPhoto('${item.id}',f); if(url){ renderStockItemDetailsPanel(); renderTable(); }})(event)">
+                        </label>
+                    </div>
                     <div>
                         <div class="stock-detail-name">${item.name || 'Unnamed item'}</div>
                         <div class="stock-detail-subline">${item.supplier || 'Unknown supplier'}</div>
@@ -7532,6 +7540,35 @@
         function persistOrderingSettings(settings) {
             localStorage.setItem('orderingSettings', JSON.stringify(settings));
             localStorage.setItem('tupouRecipientEmail', settings.recipientEmail || '');
+        }
+
+        async function loadItemPhotos() {
+            try {
+                const res = await fetch(apiUrl('/api/items/photos'));
+                const data = await parseApiResponse(res);
+                if (!data.error) {
+                    itemPhotosById = {};
+                    (data.photos || []).forEach(p => { itemPhotosById[p.itemId] = p.photoUrl; });
+                }
+            } catch (e) { /* silently ignore */ }
+        }
+
+        async function uploadItemPhoto(itemId, file) {
+            const email = localStorage.getItem('currentUser') || '';
+            const pw = sessionStorage.getItem('_sessionPw') || '';
+            if (!email || !pw) { alert('Please log in to upload photos.'); return null; }
+            const formData = new FormData();
+            formData.append('itemId', itemId);
+            formData.append('requesterEmail', email);
+            formData.append('requesterPassword', pw);
+            formData.append('photo', file);
+            try {
+                const res = await fetch(apiUrl('/api/items/photo/upload'), { method: 'POST', body: formData });
+                const data = await parseApiResponse(res);
+                if (data.error) { alert('Upload failed: ' + data.error); return null; }
+                itemPhotosById[itemId] = data.photoUrl;
+                return data.photoUrl;
+            } catch (e) { alert('Upload failed: ' + formatApiNetworkError(e)); return null; }
         }
 
         async function loadSupplierProfilesFromApi() {
