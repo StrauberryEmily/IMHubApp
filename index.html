@@ -2817,39 +2817,51 @@
             <!-- DELIVERIES PAGE -->
             <section id="deliveries" class="page">
                 <div class="page-content">
-                    <div class="top">
-                        <h1>Deliveries</h1>
-                        <div class="sub">Linked to your Delivers sheet - Click any cell to edit</div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px;">
+                        <div>
+                            <h1 style="margin:0;font-size:28px;">Deliveries</h1>
+                            <div style="color:var(--muted);font-size:13px;margin-top:4px;">View and manage all deliveries from your suppliers.</div>
+                        </div>
+                        <button class="btn primary" onclick="showAddDeliveryModal()">+ Add Delivery</button>
                     </div>
-                    <div class="toolbar">
-                        <input id="deliveriesSearch" class="search" placeholder="Search deliveries..." oninput="renderDeliveriesTable()">
-                        <select class="filter-dropdown" id="supplierFilter2" onchange="renderDeliveriesTable()">
+
+                    <!-- Stats cards -->
+                    <div id="deliveriesStatsBar" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px;"></div>
+
+                    <!-- Filters -->
+                    <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center;">
+                        <div style="position:relative;flex:1;min-width:160px;">
+                            <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--muted);">🔍</span>
+                            <input id="deliveriesSearch" style="width:100%;padding:10px 12px 10px 32px;border:1px solid var(--border);border-radius:8px;font-size:14px;" placeholder="Search deliveries..." oninput="renderDeliveriesTable()">
+                        </div>
+                        <select class="filter-dropdown" id="supplierFilter2" onchange="renderDeliveriesTable()" style="min-width:140px;">
                             <option value="">All Suppliers</option>
                         </select>
-                        <!-- Export moved to Settings -->
-                        <button class="btn primary" onclick="showAddDeliveryModal()" style="margin-left: auto;">➕ Add Delivery</button>
+                        <select class="filter-dropdown" id="statusFilter2" onchange="renderDeliveriesTable()" style="min-width:130px;">
+                            <option value="">All Statuses</option>
+                            <option value="pending">Pending</option>
+                            <option value="completed">Completed</option>
+                            <option value="ordered">Ordered</option>
+                            <option value="overdue">Overdue</option>
+                        </select>
                     </div>
-                    <div class="tablewrap" style="overflow-x: auto;">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Date Ordered</th>
-                                    <th>Expected Delivery</th>
-                                    <th>Date Received</th>
-                                    <th>Supplier</th>
-                                    <th>Item</th>
-                                    <th>Quantity</th>
-                                    <th>Purchase Unit</th>
-                                    <th>Expiry Date</th>
-                                    <th>Status</th>
-                                    <th>Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody id="deliveriesRows">
-                                <tr><td colspan="10" style="text-align:center;padding:30px">Loading...</td></tr>
-                            </tbody>
-                        </table>
+
+                    <!-- Split view -->
+                    <div style="display:grid;grid-template-columns:minmax(320px,1fr) minmax(0,1.4fr);gap:16px;align-items:start;" id="deliveriesSplitView">
+                        <!-- List -->
+                        <div style="background:white;border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+                            <div style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+                                <span id="deliveriesCount" style="font-weight:700;font-size:14px;">DELIVERIES</span>
+                            </div>
+                            <div id="deliveriesListPanel" style="max-height:640px;overflow-y:auto;"></div>
+                        </div>
+                        <!-- Detail -->
+                        <div id="deliveriesDetailPanel" style="background:white;border:1px solid var(--border);border-radius:12px;padding:20px;min-height:300px;">
+                            <div style="display:flex;align-items:center;justify-content:center;height:200px;color:var(--muted);font-size:14px;">Select a delivery to view details</div>
+                        </div>
                     </div>
+                    <!-- Hidden legacy table for data compat -->
+                    <tbody id="deliveriesRows" style="display:none;"></tbody>
                 </div>
             </section>
             
@@ -6469,39 +6481,210 @@
             `).join('');
         }
         
+        let selectedDeliveryIdx = null;
+
+        function getDeliveryStatus(d) {
+            const raw = (d.status || d.onTime || d['Status'] || d['On Time'] || '').toLowerCase().trim();
+            const received = d.dateReceived || d['Date Received'];
+            const eta = d.expectedDelivery || d['Expected Delivery'];
+            if (raw === 'yes' || raw === 'completed' || raw === 'received' || received) {
+                const etaDate = eta ? new Date(eta) : null;
+                const recDate = received ? new Date(received) : null;
+                if (etaDate && recDate && recDate > etaDate) return 'Overdue';
+                return 'Completed';
+            }
+            if (raw === 'pending' || raw === '') {
+                if (eta && new Date(eta) < new Date()) return 'Overdue';
+                return 'Pending';
+            }
+            if (raw === 'ordered') return 'Ordered';
+            if (raw === 'approved') return 'Completed';
+            return raw.charAt(0).toUpperCase() + raw.slice(1);
+        }
+
+        function getDeliveryStatusStyle(status) {
+            const s = (status || '').toLowerCase();
+            if (s === 'completed') return 'background:#e8f5e9;color:#2e7d32;';
+            if (s === 'pending') return 'background:#fff3e0;color:#e56a00;';
+            if (s === 'overdue') return 'background:#ffebee;color:#c62828;';
+            if (s === 'ordered') return 'background:#e3f2fd;color:#1565c0;';
+            return 'background:#f5f5f5;color:#666;';
+        }
+
+        function getDeliverySupplierLogo(supplierName) {
+            const match = ORDERING_SUPPLIERS.find(s => supplierMatchesItem(s.name, supplierName));
+            if (!match) return SUPPLIER_PLACEHOLDER_LOGO;
+            const profile = getSupplierProfile(match.id);
+            return profile.logoUrl || SUPPLIER_PLACEHOLDER_LOGO;
+        }
+
         function renderDeliveriesTable() {
-            const search = document.getElementById('deliveriesSearch')?.value.toLowerCase() || '';
+            const search = (document.getElementById('deliveriesSearch')?.value || '').toLowerCase();
             const supplierFilter = document.getElementById('supplierFilter2')?.value || '';
-            
-            let filtered = deliveries || [];
-            if (supplierFilter) {
-                filtered = filtered.filter(d => d['Supplier'] === supplierFilter);
+            const statusFilter = (document.getElementById('statusFilter2')?.value || '').toLowerCase();
+            const today = new Date(); today.setHours(0,0,0,0);
+
+            let filtered = (deliveries || []).filter(d => {
+                const supplier = (d.supplier || d['Supplier'] || '').toLowerCase();
+                const item = (d.item || d['Item'] || '').toLowerCase();
+                const status = getDeliveryStatus(d).toLowerCase();
+                if (supplierFilter && !supplier.includes(supplierFilter.toLowerCase())) return false;
+                if (statusFilter && status !== statusFilter) return false;
+                if (search && !supplier.includes(search) && !item.includes(search)) return false;
+                return true;
+            });
+
+            // Stats
+            const statsEl = document.getElementById('deliveriesStatsBar');
+            if (statsEl) {
+                const all = deliveries || [];
+                const thisMonth = all.filter(d => {
+                    const dt = new Date(d.dateOrdered || d['Date Ordered'] || '');
+                    return dt.getMonth() === today.getMonth() && dt.getFullYear() === today.getFullYear();
+                }).length;
+                const completed = all.filter(d => getDeliveryStatus(d) === 'Completed').length;
+                const pending = all.filter(d => getDeliveryStatus(d) === 'Pending').length;
+                const overdue = all.filter(d => getDeliveryStatus(d) === 'Overdue').length;
+                const totalItems = all.reduce((s, d) => s + parseNumeric(d.quantity || d['Quantity']), 0);
+                statsEl.innerHTML = [
+                    { icon: '📅', label: 'Deliveries This Month', value: thisMonth, sub: 'View all', color: '#ff4d94', action: '' },
+                    { icon: '✅', label: 'Completed', value: completed, sub: `${all.length ? Math.round(completed/all.length*100) : 0}% of deliveries`, color: '#1b8f4a', action: `document.getElementById('statusFilter2').value='completed';renderDeliveriesTable()` },
+                    { icon: '🕐', label: 'Pending', value: pending, sub: 'Awaiting delivery', color: '#e56a00', action: `document.getElementById('statusFilter2').value='pending';renderDeliveriesTable()` },
+                    { icon: '🚚', label: 'Overdue', value: overdue, sub: overdue === 0 ? 'All up to date' : 'Check deliveries', color: '#c62828', action: `document.getElementById('statusFilter2').value='overdue';renderDeliveriesTable()` },
+                    { icon: '📦', label: 'Total Items Received', value: totalItems, sub: 'This month', color: '#1565c0', action: '' }
+                ].map(item => `
+                    <div class="widget" style="padding:16px;cursor:${item.action?'pointer':'default'};" ${item.action ? `onclick="${item.action}"` : ''}>
+                        <div style="font-size:22px;">${item.icon}</div>
+                        <div style="font-size:26px;font-weight:800;color:${item.color};line-height:1.1;margin-top:4px;">${item.value}</div>
+                        <div style="font-size:12px;font-weight:600;color:var(--text);margin-top:2px;">${item.label}</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:2px;">${item.sub}</div>
+                    </div>`).join('');
             }
-            if (search) {
-                filtered = filtered.filter(d => 
-                    d['Item']?.toLowerCase().includes(search) ||
-                    d['Supplier']?.toLowerCase().includes(search)
-                );
+
+            // Count
+            const countEl = document.getElementById('deliveriesCount');
+            if (countEl) countEl.textContent = `DELIVERIES (${filtered.length})`;
+
+            // List panel
+            const listEl = document.getElementById('deliveriesListPanel');
+            if (!listEl) return;
+            if (!filtered.length) {
+                listEl.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);">No deliveries found</div>';
+                return;
             }
-            
-            const html = filtered.length > 0 ? filtered.map((d, idx) => `
-                <tr>
-                    <td>${(d.dateOrdered || d['Date Ordered']) || '—'}</td>
-                    <td>${(d.expectedDelivery || d['Expected Delivery']) || '—'}</td>
-                    <td>${(d.dateReceived || d['Date Received']) || '—'}</td>
-                    <td>${(d.supplier || d['Supplier']) || '—'}</td>
-                    <td>${(d.item || d['Item']) || '—'}</td>
-                    <td>${(d.quantity || d['Quantity']) || '—'}</td>
-                    <td>${(d.purchaseUnit || d['Purchase Unit']) || '—'}</td>
-                    <td>${(d.expiryDate || d['Expiry Date']) || '—'}</td>
-                    <td>${(d.onTime || d['On Time']) || '—'}</td>
-                    <td>${(d.notes || d['Notes']) || '—'}</td>
-                    <td style="text-align:center;"><button onclick="openEditModal('deliveries', ${idx})" style="background:none;border:none;cursor:pointer;font-size:18px;padding:4px 8px;">✎</button></td>
-                </tr>
-            `).join('') : '<tr><td colspan="11" style="text-align:center;padding:30px;color:var(--muted);">No deliveries found</td></tr>';
-            
-            const tbody = document.getElementById('deliveriesRows');
-            if (tbody) tbody.innerHTML = html;
+
+            const sorted = filtered.slice().sort((a,b) => new Date(b.dateOrdered||b['Date Ordered']||0) - new Date(a.dateOrdered||a['Date Ordered']||0));
+
+            listEl.innerHTML = sorted.map((d, i) => {
+                const supplier = d.supplier || d['Supplier'] || '—';
+                const item = d.item || d['Item'] || 'Unknown item';
+                const ordered = prettyDate(d.dateOrdered || d['Date Ordered']);
+                const received = prettyDate(d.dateReceived || d['Date Received']);
+                const qty = d.quantity || d['Quantity'] || '?';
+                const unit = d.purchaseUnit || d['Purchase Unit'] || '';
+                const status = getDeliveryStatus(d);
+                const logo = getDeliverySupplierLogo(supplier);
+                const isSelected = selectedDeliveryIdx === i;
+                return `<div onclick="selectDelivery(${i}, ${JSON.stringify(d).replace(/"/g,'&quot;')})" style="padding:14px 16px;border-bottom:1px solid var(--border);display:grid;grid-template-columns:48px 1fr auto;gap:12px;align-items:center;cursor:pointer;background:${isSelected?'var(--pink2)':'white'};transition:background 0.15s;">
+                    <img src="${logo}" alt="${supplier}" style="width:48px;height:36px;object-fit:contain;border-radius:6px;background:#fafafa;border:1px solid var(--border);" />
+                    <div>
+                        <div style="font-weight:700;font-size:14px;">${item}</div>
+                        <div style="font-size:12px;color:var(--muted);margin-top:2px;">Ordered: ${ordered}</div>
+                        ${received ? `<div style="font-size:12px;color:var(--muted);">Received: ${received}</div>` : ''}
+                    </div>
+                    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+                        <span style="padding:3px 10px;border-radius:999px;font-size:11px;font-weight:700;${getDeliveryStatusStyle(status)}">${status}</span>
+                        <span style="font-size:12px;color:var(--muted);">${qty} ${unit}</span>
+                    </div>
+                </div>`;
+            }).join('');
+
+            // Auto-select first
+            if (selectedDeliveryIdx === null && sorted.length) {
+                selectDelivery(0, sorted[0]);
+            }
+        }
+
+        function selectDelivery(idx, d) {
+            selectedDeliveryIdx = idx;
+            const panel = document.getElementById('deliveriesDetailPanel');
+            if (!panel) return;
+
+            const supplier = d.supplier || d['Supplier'] || '—';
+            const item = d.item || d['Item'] || '—';
+            const qty = d.quantity || d['Quantity'] || '—';
+            const unit = d.purchaseUnit || d['Purchase Unit'] || '';
+            const ordered = prettyDate(d.dateOrdered || d['Date Ordered']);
+            const eta = prettyDate(d.expectedDelivery || d['Expected Delivery']);
+            const received = prettyDate(d.dateReceived || d['Date Received']);
+            const expiryDate = d.expiryDate || d['Expiry Date'] || '—';
+            const notes = d.notes || d['Notes'] || '';
+            const status = getDeliveryStatus(d);
+            const logo = getDeliverySupplierLogo(supplier);
+
+            panel.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <img src="${logo}" alt="${supplier}" style="height:40px;width:80px;object-fit:contain;border:1px solid var(--border);border-radius:8px;background:#fafafa;padding:4px;" />
+                        <div>
+                            <div style="font-weight:700;font-size:18px;">${item}</div>
+                            <div style="font-size:13px;color:var(--muted);">${supplier}</div>
+                        </div>
+                        <span style="padding:4px 12px;border-radius:999px;font-size:12px;font-weight:700;${getDeliveryStatusStyle(status)}">${status}</span>
+                    </div>
+                    <button onclick="openEditModal('deliveries', ${idx})" style="padding:8px 14px;border:1px solid var(--border);background:white;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">✎ Edit Delivery</button>
+                </div>
+
+                <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px;">
+                    ${[['📅','Ordered',ordered],['🚚','Expected Delivery',eta],['✅','Date Received',received||'Not yet'],['📦','Total Items',qty+' '+unit]].map(([icon,label,val])=>`
+                    <div style="background:#fafafa;border:1px solid var(--border);border-radius:10px;padding:12px;text-align:center;">
+                        <div style="font-size:20px;">${icon}</div>
+                        <div style="font-size:11px;color:var(--muted);margin-top:4px;">${label}</div>
+                        <div style="font-size:14px;font-weight:700;margin-top:2px;">${val}</div>
+                    </div>`).join('')}
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+                    <div>
+                        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">Delivery Items</div>
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead><tr style="background:#fafafa;">
+                                <th style="text-align:left;padding:8px;font-size:12px;border-bottom:1px solid var(--border);">Item</th>
+                                <th style="text-align:left;padding:8px;font-size:12px;border-bottom:1px solid var(--border);">Qty</th>
+                                <th style="text-align:left;padding:8px;font-size:12px;border-bottom:1px solid var(--border);">Unit</th>
+                                <th style="text-align:left;padding:8px;font-size:12px;border-bottom:1px solid var(--border);">Expiry</th>
+                            </tr></thead>
+                            <tbody><tr>
+                                <td style="padding:8px;font-size:13px;border-bottom:1px solid var(--border);">${item}</td>
+                                <td style="padding:8px;font-size:13px;border-bottom:1px solid var(--border);">${qty}</td>
+                                <td style="padding:8px;font-size:13px;border-bottom:1px solid var(--border);">${unit}</td>
+                                <td style="padding:8px;font-size:13px;border-bottom:1px solid var(--border);">${expiryDate}</td>
+                            </tr></tbody>
+                        </table>
+                    </div>
+                    <div>
+                        <div style="font-weight:700;font-size:14px;margin-bottom:8px;">Delivery Details</div>
+                        <div style="display:grid;gap:8px;font-size:13px;">
+                            <div style="display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">Supplier</span><strong>${supplier}</strong></div>
+                            <div style="display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">Purchase Order #</span><strong>—</strong></div>
+                            <div style="display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">Received By</span><strong>—</strong></div>
+                            <div style="display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">Notes</span><strong>${notes || '—'}</strong></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="border-top:1px solid var(--border);padding-top:12px;display:flex;justify-content:space-between;align-items:center;">
+                    <button onclick="if(confirm('Delete this delivery?')){deliveries.splice(${idx},1);selectedDeliveryIdx=null;renderDeliveriesTable();}" style="padding:8px 14px;background:#ffebee;color:#c62828;border:1px solid #ffcdd2;border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">🗑 Delete Delivery</button>
+                    <span style="font-size:12px;color:var(--muted);">${received ? 'Delivered on ' + received : 'Pending delivery'}</span>
+                </div>`;
+
+            // Re-render list to update selection highlight
+            const listEl = document.getElementById('deliveriesListPanel');
+            if (listEl) {
+                listEl.querySelectorAll('[onclick^="selectDelivery"]').forEach((el, i) => {
+                    el.style.background = i === idx ? 'var(--pink2)' : 'white';
+                });
+            }
         }
         
         function getFilteredStockItems() {
@@ -6658,7 +6841,10 @@
                     <tr>
                         <td>
                             <div style="display:flex;align-items:center;gap:8px;">
-                                <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" class="stock-thumb" onclick="openStockItemDetails('${item.id}')" />
+                                <div style="position:relative;">
+                                    <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" class="stock-thumb" onclick="openStockItemDetails('${item.id}')" />
+                                    <label title="Upload photo" style="position:absolute;bottom:-3px;right:-3px;background:var(--pink);color:white;border-radius:50%;width:16px;height:16px;display:flex;align-items:center;justify-content:center;font-size:9px;cursor:pointer;line-height:1;">✎<input type="file" accept="image/*" style="display:none;" onchange="(async(e)=>{const f=e.target.files[0];if(!f)return;await uploadItemPhoto('${item.id}',f);renderTable();})(event)"></label>
+                                </div>
                                 <div>
                                     <a class="stock-item-link" onclick="openStockItemDetails('${item.id}')">${item.name || 'Unnamed'}</a>
                                     <div style="font-size:11px;color:var(--muted);">${item.subcategory || '—'}</div>
@@ -6690,8 +6876,11 @@
                 const stock = parseNumeric(item.totalStock);
                 return `
                     <article class="stock-catalog-card">
-                        <button type="button" class="stock-catalog-menu" aria-label="Item menu" onclick="openStockItemDetails('${item.id}')">⋮</button>
-                        <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" onclick="openStockItemDetails('${item.id}')" />
+                        <div style="position:relative;text-align:center;">
+                            <button type="button" class="stock-catalog-menu" aria-label="Item menu" onclick="openStockItemDetails('${item.id}')">⋮</button>
+                            <img src="${getSupplierLogoForStockItem(item)}" alt="${item.name}" onclick="openStockItemDetails('${item.id}')" />
+                            <label title="Upload photo" style="position:absolute;bottom:4px;right:4px;background:var(--pink);color:white;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;">✎<input type="file" accept="image/*" style="display:none;" onchange="(async(e)=>{const f=e.target.files[0];if(!f)return;await uploadItemPhoto('${item.id}',f);renderTable();})(event)"></label>
+                        </div>
                         <div>
                             <a class="stock-item-link" onclick="openStockItemDetails('${item.id}')">${item.name || 'Unnamed'}</a>
                             <div style="font-size:11px;color:var(--muted);margin-top:2px;">${item.subcategory || item.category || '—'}</div>
