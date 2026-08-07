@@ -183,15 +183,21 @@ db.serialize(() => {
         });
     }
 });
-// For Gmail: Use App Password (not your regular password)
-// Generate at: https://myaccount.google.com/apppasswords
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL_USER || 'your-email@gmail.com',
-        pass: process.env.EMAIL_PASSWORD || 'your-app-password'
-    }
-});
+// Email sending via Resend API (SMTP is blocked by most cloud hosts)
+async function sendEmail({ to, from, replyTo, subject, html }) {
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error('RESEND_API_KEY not set in environment variables');
+
+    const payload = { from, to, reply_to: replyTo, subject, html };
+    const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || JSON.stringify(data));
+    return data;
+}
 
 // Generate a random reset token
 function generateResetToken() {
@@ -713,8 +719,8 @@ app.post('/api/orders/tupou-request', emailLimiter, async (req, res) => {
         </div>`;
 
     try {
-        await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+        await sendEmail({
+            from: process.env.EMAIL_USER || `noreply@imhubapp.com`,
             to: sendTo,
             replyTo: requesterEmail,
             subject: `IMH Order Request — ${supplier} — ${orderNumber || new Date().toLocaleDateString()}`,
@@ -722,8 +728,8 @@ app.post('/api/orders/tupou-request', emailLimiter, async (req, res) => {
         });
         res.json({ success: true });
     } catch (err) {
-        console.error('Tupou email error:', err);
-        res.status(500).json({ error: 'Failed to send email. Check EMAIL_USER and EMAIL_PASSWORD environment variables.' });
+        console.error('Tupou email error:', err.message || err);
+        res.status(500).json({ error: `Failed to send email: ${err.message || err}` });
     }
 });
 
