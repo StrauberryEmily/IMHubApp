@@ -442,6 +442,7 @@ app.post('/api/login', loginLimiter, async (req, res) => {
                 success: true,
                 message: 'Login successful',
                 email: user.email,
+                fullName: user.fullName || null,
                 recoveryCode: user.recoveryCode.toString()
             });
         });
@@ -449,6 +450,23 @@ app.post('/api/login', loginLimiter, async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({ error: 'Login failed' });
     }
+});
+
+// Update profile name
+app.post('/api/profile/update', loginLimiter, async (req, res) => {
+    const { email, password, fullName } = req.body || {};
+    const cleanEmail = sanitizeInput(email || '').toLowerCase();
+    const cleanName = sanitizeInput(fullName || '').trim();
+    if (!cleanEmail || !cleanName) return res.status(400).json({ error: 'Email and name required' });
+    db.get('SELECT passwordHash FROM users WHERE email = ?', [cleanEmail], async (err, user) => {
+        if (err || !user) return res.status(401).json({ error: 'Invalid credentials' });
+        const ok = await bcrypt.compare(password || '', user.passwordHash);
+        if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+        db.run('UPDATE users SET fullName = ? WHERE email = ?', [cleanName, cleanEmail], (e) => {
+            if (e) return res.status(500).json({ error: 'Database error' });
+            res.json({ success: true, fullName: cleanName });
+        });
+    });
 });
 
 // Start password recovery - verify email exists and return hint

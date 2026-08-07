@@ -3337,7 +3337,6 @@
                     <button onclick="showSettingsSection('location')" class="settings-btn" data-section="location" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">📍 Location</button>
                     <button onclick="showSettingsSection('team')" class="settings-btn" data-section="team" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">👥 Team</button>
                     <button onclick="showSettingsSection('security')" class="settings-btn" data-section="security" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">🔐 Security</button>
-                    <button onclick="showSettingsSection('ordering')" class="settings-btn" data-section="ordering" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">🧾 Ordering</button>
                     <button onclick="showSettingsSection('export')" class="settings-btn" data-section="export" style="width:100%;text-align:left;padding:12px;border:1px solid var(--border);background:white;cursor:pointer;margin-bottom:8px;border-radius:6px;font-weight:500;">💾 Export & Backup</button>
                 </div>
                 
@@ -3450,65 +3449,6 @@
                         </div>
                     </div>
 
-                    <div id="ordering-section" class="settings-section" style="display:none;">
-                        <h2>🧾 Ordering Configuration</h2>
-                        <p style="color:var(--muted);margin-top:8px;">Configure Tupou recipient and supplier information that is used across Ordering pages.</p>
-                        <div style="margin-top:16px;display:grid;gap:10px;">
-                            <label style="font-size:13px;font-weight:600;color:var(--muted);">Tupou Request Recipient Email</label>
-                            <input type="email" id="tupouRecipientEmailSetting" placeholder="manager@example.com" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                            <label style="font-size:13px;font-weight:600;color:var(--muted);margin-top:6px;">Supplier To Edit</label>
-                            <select id="orderingSettingsSupplierSelect" onchange="populateOrderingSettingsForm()" style="padding:10px;border:1px solid var(--border);border-radius:6px;"></select>
-                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Ordering Portal URL</label>
-                                    <input type="url" id="supplierOrderingUrlInput" placeholder="https://..." style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Logo URL</label>
-                                    <input type="url" id="supplierLogoUrlInput" placeholder="https://..." style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;grid-column:1 / -1;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Upload / Replace Logo (Admin or Owner only)</label>
-                                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                                        <input type="file" id="supplierLogoFileInput" accept="image/*" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:white;"/>
-                                        <button type="button" onclick="uploadSupplierLogoFromSettings()" style="padding:9px 12px;background:#1f7a3f;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Upload Logo</button>
-                                        <button type="button" onclick="removeSupplierLogoFromSettings()" style="padding:9px 12px;background:#b42318;color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">Remove Logo</button>
-                                    </div>
-                                    <div id="supplierLogoUploadStatus" style="font-size:12px;color:var(--muted);"></div>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Ordering Method</label>
-                                    <input type="text" id="supplierOrderingMethodInput" placeholder="Online Portal" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Preferred Purchase Units</label>
-                                    <input type="text" id="supplierPreferredUnitsInput" placeholder="Carton, Case" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Delivery Frequency</label>
-                                    <input type="text" id="supplierDeliveryFrequencyInput" placeholder="2-3 times per week" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Account Manager</label>
-                                    <input type="text" id="supplierAccountManagerInput" placeholder="Name" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Phone Number</label>
-                                    <input type="text" id="supplierPhoneInput" placeholder="Phone" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                                <div style="display:grid;gap:6px;">
-                                    <label style="font-size:12px;color:var(--muted);font-weight:600;">Email Address</label>
-                                    <input type="email" id="supplierEmailInput" placeholder="Email" style="padding:10px;border:1px solid var(--border);border-radius:6px;"/>
-                                </div>
-                            </div>
-                            <div style="display:grid;gap:6px;">
-                                <label style="font-size:12px;color:var(--muted);font-weight:600;">Important Notes</label>
-                                <textarea id="supplierNotesInput" style="min-height:120px;padding:10px;border:1px solid var(--border);border-radius:6px;"></textarea>
-                            </div>
-                            <button onclick="saveOrderingSettings()" style="padding:12px;background:var(--pink);color:white;border:none;border-radius:6px;cursor:pointer;font-weight:600;">💾 Save Ordering Settings</button>
-                        </div>
-                    </div>
-                    
                     <!-- Security Section -->
                     <div id="security-section" class="settings-section" style="display:none;">
                         <h2>🔐 Security</h2>
@@ -3847,7 +3787,7 @@
                 
                 // Login successful - store in localStorage
                 localStorage.setItem('currentUser', data.email);
-                localStorage.setItem('currentUserName', userData.name || 'User');
+                localStorage.setItem('currentUserName', data.fullName || userData.name || localStorage.getItem('currentUserName') || 'User');
                 localStorage.setItem('currentUserJobTitle', userData.location || 'Staff');
                 localStorage.setItem('userRole', userRole);
                 localStorage.setItem('isOwner', ownerFlag);
@@ -3857,6 +3797,7 @@
                 // Mark this browser session as authenticated.
                 sessionStorage.setItem('imhAuthenticated', '1');
                 sessionStorage.setItem('imhSessionUser', data.email);
+                sessionStorage.setItem('_sessionPw', password);
                 
                 checkAuth();
             })
@@ -4121,13 +4062,22 @@
             const title = document.getElementById('settingJobTitle').value || localStorage.getItem('currentUserJobTitle');
             localStorage.setItem('currentUserName', name);
             localStorage.setItem('currentUserJobTitle', title);
-            // Keep backup keys in sync for compatibility
             localStorage.setItem('userName', name);
             localStorage.setItem('userJobTitle', title);
-            // Update UI immediately
             if (document.getElementById('sidebarUserName')) document.getElementById('sidebarUserName').textContent = name;
             const userNameEl = document.querySelector('.user-name');
             if (userNameEl) userNameEl.textContent = name;
+
+            // Persist name to server so it survives across devices/logouts
+            const email = localStorage.getItem('currentUser');
+            const password = sessionStorage.getItem('_sessionPw') || '';
+            if (email && name) {
+                fetch(apiUrl('/api/profile/update'), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password, fullName: name })
+                }).catch(() => {});
+            }
             alert('✅ Profile updated!');
         }
         
@@ -5471,7 +5421,10 @@
         
         function updateDashboard() {
             document.getElementById('totalItemsCount').textContent = inventory.length;
-            const activeItems = inventory.filter(i => i.active && i.active.toLowerCase() === 'true').length;
+            const activeItems = inventory.filter(i => {
+                const a = String(i.active || '').toLowerCase();
+                return a !== 'no' && a !== 'false' && a !== '0';
+            }).length;
             const healthPercent = Math.round((activeItems / inventory.length) * 100) || 0;
             document.getElementById('healthPercent').textContent = healthPercent + '%';
             updateExpiryMetrics(); // Update expiry metrics
@@ -7142,28 +7095,53 @@
         }
 
         function updateAlertsPanel() {
-            const today = new Date().toISOString().split('T')[0];
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            const todayStr = today.toISOString().split('T')[0];
             const allAlerts = [];
-            expiryDates.forEach(item => {
-                if ((item['Expiry Date'] || '').substring(0, 10) === today) {
-                    allAlerts.push({type: 'expiry', text: `${item['Item name']} expires today`, icon: '⏰'});
-                }
+
+            // Critical: expired items
+            (expiryDates || []).forEach(item => {
+                const d = calculateDaysUntilExpiry(item.expiryDate || item['Expiry Date'] || '');
+                if (d !== null && d < 0) allAlerts.push({ priority: 0, icon: '🔴', text: `EXPIRED: ${item.item || item['Item']} (${Math.abs(d)} days ago)` });
+                else if (d !== null && d === 0) allAlerts.push({ priority: 0, icon: '⚠️', text: `Expires TODAY: ${item.item || item['Item']}` });
+                else if (d !== null && d <= 3) allAlerts.push({ priority: 1, icon: '⏰', text: `Expires in ${d} days: ${item.item || item['Item']}` });
+                else if (d !== null && d <= 7) allAlerts.push({ priority: 2, icon: '📅', text: `Expiring soon (${d} days): ${item.item || item['Item']}` });
             });
-            inventory.forEach(item => {
-                if (!item.packQty || parseInt(item.packQty) < 10) {
-                    allAlerts.push({type: 'low-stock', text: `${item.name} - Low Stock (${item.packQty || 0})`, icon: '📉'});
-                }
+
+            // Critical: out of stock or below minimum
+            (inventory || []).forEach(item => {
+                const stock = parseNumeric(item.totalStock);
+                const min = parseNumeric(item.minStock);
+                const reorder = parseNumeric(item.reorderPoint);
+                if (stock <= 0) allAlerts.push({ priority: 0, icon: '🚨', text: `OUT OF STOCK: ${item.name}` });
+                else if (min > 0 && stock <= min) allAlerts.push({ priority: 1, icon: '📉', text: `Below minimum: ${item.name} (${stock} left, min ${min})` });
+                else if (reorder > 0 && stock <= reorder) allAlerts.push({ priority: 2, icon: '🔄', text: `Reorder needed: ${item.name} (${stock} left)` });
             });
-            deliveries.forEach(d => {
-                if (!d['Status'] || d['Status'].toLowerCase() === 'pending') {
-                    allAlerts.push({type: 'delivery', text: `Delivery from ${d['Supplier']} - ${d['Date']}`, icon: '📦'});
-                }
+
+            // Expected deliveries today or overdue
+            (deliveries || []).forEach(d => {
+                const eta = (d.expectedDelivery || d['Expected Delivery'] || '').substring(0, 10);
+                const status = (d.status || d['Status'] || '').toLowerCase();
+                if (!eta || status === 'received' || status === 'cancelled') return;
+                if (eta === todayStr) allAlerts.push({ priority: 1, icon: '🚚', text: `Delivery expected today: ${d.supplier || d['Supplier']}` });
+                else if (eta < todayStr) allAlerts.push({ priority: 1, icon: '📦', text: `Overdue delivery: ${d.supplier || d['Supplier']} (was ${eta})` });
             });
-            activities.slice(0, 10).forEach(a => {
-                allAlerts.push({type: 'activity', text: a.action, icon: '✓'});
-            });
-            const html = allAlerts.slice(0, 20).map(a => `<div class="alert-item"><div class="alert-icon">${a.icon}</div><div class="alert-text">${a.text}</div></div>`).join('');
-            document.getElementById('alertsList').innerHTML = html || '<div style="padding:20px;text-align:center;color:var(--muted)">No alerts</div>';
+
+            if (!allAlerts.length) {
+                document.getElementById('alertsList').innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted)">✅ All clear — no urgent alerts</div>';
+                document.getElementById('alertBadge').textContent = '0';
+                return;
+            }
+
+            allAlerts.sort((a, b) => a.priority - b.priority);
+            const html = allAlerts.slice(0, 20).map(a => `
+                <div class="alert-item" style="border-left:3px solid ${a.priority===0?'#c62828':a.priority===1?'#e56a00':'#1b8f4a'};padding-left:10px;margin:4px 0;">
+                    <div class="alert-icon">${a.icon}</div>
+                    <div class="alert-text" style="font-size:13px;">${a.text}</div>
+                </div>`).join('');
+            document.getElementById('alertsList').innerHTML = html;
+            document.getElementById('alertBadge').textContent = String(Math.min(allAlerts.length, 99));
         }
 
         function toggleAlertsPanel() {
